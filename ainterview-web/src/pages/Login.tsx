@@ -47,7 +47,7 @@ export const Login: React.FC = () => {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g., hr1"
+              placeholder="e.g., joe"
               style={{
                 width: '100%',
                 padding: '10px',
@@ -68,7 +68,7 @@ export const Login: React.FC = () => {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="e.g., 123"
+              placeholder="password"
               style={{
                 width: '100%',
                 padding: '10px',
@@ -101,7 +101,6 @@ export const Login: React.FC = () => {
         </form>
 
         <p style={{ color: '#6b7280', fontSize: '14px', textAlign: 'center', marginTop: '16px' }}>
-          Demo credentials: hr1/123, hr2/456, admin/000
         </p>
       </div>
     </div>

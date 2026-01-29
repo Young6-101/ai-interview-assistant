@@ -11,7 +11,6 @@ export interface UseMeetingRoomReturn {
 
 /**
  * Hook for managing screen sharing (Meeting Room)
- * Based on reference/meeting-room.js
  */
 export const useMeetingRoom = (): UseMeetingRoomReturn => {
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null)

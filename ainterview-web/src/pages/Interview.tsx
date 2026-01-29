@@ -17,7 +17,10 @@ export const Interview: React.FC = () => {
   const context = useInterview()
   const { isConnected, startInterview, pauseInterview, stopInterview } = useWebSocket()
   const { screenStream, isSharing, selectMeetingRoom, stopMeetingRoom, error: meetingRoomError } = useMeetingRoom()
-  const { startHrRecording, stopHrRecording, stopCandidateRecording } = useAudioCapture(
+  const [isSelecting, setIsSelecting] = useState(false)
+  const [hrMicOn, setHrMicOn] = useState(false)
+  const [candidateMicOn, setCandidateMicOn] = useState(false)
+  const { startHrRecording, stopHrRecording, startCandidateRecording, stopCandidateRecording } = useAudioCapture(
     (block) => {
       // Add transcript to context
       context.addTranscript({
@@ -75,13 +78,13 @@ export const Interview: React.FC = () => {
       return
     }
 
+    if (!hrMicOn || !candidateMicOn) {
+      setError('Please start both HR and Candidate mics before starting the interview')
+      return
+    }
+
     if (startInterview()) {
       context.setInterviewState('RUNNING')
-      // Start HR audio capture
-      startHrRecording().catch((err) => {
-        console.error('Failed to start HR audio:', err)
-        setError('Audio capture failed: ' + err.message)
-      })
       setError('')
     } else {
       setError('Failed to start interview')
@@ -93,6 +96,100 @@ export const Interview: React.FC = () => {
       context.setInterviewState('PAUSED')
     }
   }
+
+  const handleSelectMeetingRoom = async () => {
+    setIsSelecting(true)
+    setError('')
+    try {
+      await selectMeetingRoom()
+    } catch (err: any) {
+      console.error('Select meeting room failed', err)
+      setError(err?.message || 'Failed to select meeting room')
+    } finally {
+      setIsSelecting(false)
+    }
+  }
+
+  const handleStartHrMic = async () => {
+    setError('')
+    try {
+      await startHrRecording()
+      setHrMicOn(true)
+    } catch (err: any) {
+      console.error('Failed to start HR mic', err)
+      setError(err?.message || 'Failed to start HR mic')
+    }
+  }
+
+  const handleStopHrMic = () => {
+    try {
+      stopHrRecording()
+    } catch (err) {
+      console.error('Failed to stop HR mic', err)
+    }
+    setHrMicOn(false)
+  }
+
+  const handleStartCandidateMic = async () => {
+    setError('')
+    if (!screenStream) {
+      setError('Please select meeting room (screen) first')
+      return
+    }
+    try {
+      await startCandidateRecording(screenStream)
+      setCandidateMicOn(true)
+    } catch (err: any) {
+      console.error('Failed to start candidate mic', err)
+      setError(err?.message || 'Failed to start candidate mic')
+    }
+  }
+
+  const handleStopCandidateMic = () => {
+    try {
+      stopCandidateRecording()
+    } catch (err) {
+      console.error('Failed to stop candidate mic', err)
+    }
+    setCandidateMicOn(false)
+  }
+
+  const handleReselectMeetingRoom = async () => {
+    try {
+      stopMeetingRoom()
+      await handleSelectMeetingRoom()
+    } catch (err: any) {
+      console.error('Reselect meeting room failed', err)
+      setError(err?.message || 'Failed to reselect meeting room')
+    }
+  }
+
+  // If the screen stream's video track ends, ensure UI/cleanup runs
+  useEffect(() => {
+    if (!screenStream) return
+    const videoTrack = screenStream.getVideoTracks()[0]
+    if (!videoTrack) return
+    const onEnded = () => {
+      console.log('Screen sharing ended (detected in Interview.tsx)')
+      stopMeetingRoom()
+    }
+    videoTrack.addEventListener('ended', onEnded)
+    return () => {
+      try {
+        videoTrack.removeEventListener('ended', onEnded)
+      } catch (_err) {}
+    }
+  }, [screenStream, stopMeetingRoom])
+
+  // If sharing stops, ensure candidate mic is stopped
+  useEffect(() => {
+    if (!isSharing && candidateMicOn) {
+      try {
+        stopCandidateRecording()
+      } catch (err) {}
+      setCandidateMicOn(false)
+    }
+  }, [isSharing, candidateMicOn, stopCandidateRecording])
 
   const handleStopInterview = () => {
     if (stopInterview()) {
@@ -255,42 +352,85 @@ export const Interview: React.FC = () => {
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid #e5e7eb', backgroundColor: 'white' }}>
           
           {/* Top: Meeting Room */}
-          <div style={{ flex: 0.5, display: 'flex', flexDirection: 'column', borderBottom: '1px solid #e5e7eb' }}>
+          <div id="meetingRoomContainer" style={{ flex: 0.5, display: 'flex', flexDirection: 'column', borderBottom: '1px solid #e5e7eb' }}>
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ margin: '0', fontSize: '14px', fontWeight: '600' }}>Meeting Room</h3>
-              <button
-                onClick={isSharing ? stopMeetingRoom : selectMeetingRoom}
-                style={{
-                  padding: '6px 12px',
-                  fontSize: '12px',
-                  backgroundColor: isSharing ? '#ef4444' : '#3b82f6',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: 'pointer'
-                }}
-              >
-                {isSharing ? '❌ Stop Share' : '📺 Select Room'}
-              </button>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <button
+                  onClick={hrMicOn ? handleStopHrMic : handleStartHrMic}
+                  style={{ padding: '6px 10px', fontSize: '12px', backgroundColor: hrMicOn ? '#ef4444' : '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  {hrMicOn ? 'Stop HR Mic' : 'Start HR Mic'}
+                </button>
+                <button
+                  onClick={candidateMicOn ? handleStopCandidateMic : handleStartCandidateMic}
+                  disabled={!isSharing && !screenStream}
+                  style={{ padding: '6px 10px', fontSize: '12px', backgroundColor: candidateMicOn ? '#ef4444' : '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: candidateMicOn ? 'pointer' : 'pointer', opacity: (!isSharing && !screenStream) ? 0.6 : 1 }}
+                >
+                  {candidateMicOn ? 'Stop Candidate Mic' : 'Start Candidate Mic'}
+                </button>
+              </div>
             </div>
             <div style={{ flex: 1, backgroundColor: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', position: 'relative', overflow: 'hidden' }}>
               {isSharing && screenStream ? (
-                <video
-                  ref={(el) => {
-                    if (el && el.srcObject !== screenStream) {
-                      el.srcObject = screenStream
-                    }
-                  }}
-                  autoPlay
-                  muted
-                  style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                />
+                <div style={{ width: '100%', height: '100%', position: 'relative' }}>
+                  <video
+                    className="meeting-room-video"
+                    ref={(el) => {
+                      if (el && el.srcObject !== screenStream) {
+                        el.srcObject = screenStream
+                      }
+                    }}
+                    autoPlay
+                    muted
+                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                  />
+
+                  <div className="meeting-room-status connected" style={{ position: 'absolute', top: '12px', left: '12px', fontSize: '12px', fontWeight: 600, padding: '6px 8px' }}>
+                    SHARING
+                  </div>
+
+                  <div className="meeting-room-controls" style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', gap: '8px' }}>
+                    <button
+                      className="room-control-btn"
+                      onClick={stopMeetingRoom}
+                      style={{ padding: '8px 12px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                      Stop
+                    </button>
+                    <button
+                      className="room-control-btn"
+                      onClick={handleReselectMeetingRoom}
+                      style={{ padding: '8px 12px', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                      Reselect
+                    </button>
+                  </div>
+                </div>
               ) : (
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: '18px', marginBottom: '8px' }}>📺</p>
-                  <p style={{ margin: '0', fontSize: '14px' }}>{isSharing ? 'Loading...' : 'Click "Select Room" to start screen share'}</p>
+                <div className="meeting-room-setup" id="meetingRoomSetup" style={{ textAlign: 'center', color: '#fff' }}>
+                  <div className="meeting-room-title" style={{ marginBottom: '12px' }}>
+                    Select Your Meeting Room
+                  </div>
+                  <button
+                    className="select-room-btn"
+                    id="selectRoomBtn"
+                    onClick={handleSelectMeetingRoom}
+                    disabled={isSelecting}
+                    style={{
+                      padding: '12px 18px',
+                      backgroundColor: '#3b82f6',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '6px',
+                      cursor: isSelecting ? 'not-allowed' : 'pointer'
+                    }}
+                  >
+                    {isSelecting ? 'Selecting...' : 'Select'}
+                  </button>
                 </div>
               )}
+
               {meetingRoomError && (
                 <div style={{ position: 'absolute', top: '20px', left: '20px', backgroundColor: '#fee2e2', color: '#dc2626', padding: '8px 12px', borderRadius: '4px', fontSize: '12px' }}>
                   {meetingRoomError}
@@ -417,16 +557,16 @@ export const Interview: React.FC = () => {
           {context.interviewState === 'NOT_STARTED' && (
             <button
               onClick={handleStartInterview}
-              disabled={!isConnected}
+              disabled={!(isConnected && isSharing && hrMicOn && candidateMicOn)}
               style={{
                 padding: '12px 24px',
-                backgroundColor: isConnected ? '#10b981' : '#d1d5db',
+                backgroundColor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? '#10b981' : '#d1d5db',
                 color: 'white',
                 border: 'none',
                 borderRadius: '4px',
                 fontSize: '16px',
                 fontWeight: '600',
-                cursor: isConnected ? 'pointer' : 'not-allowed'
+                cursor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? 'pointer' : 'not-allowed'
               }}
             >
               Start Interview
@@ -470,21 +610,22 @@ export const Interview: React.FC = () => {
 
           {context.interviewState === 'PAUSED' && (
             <>
-              <button
-                onClick={handleStartInterview}
-                style={{
-                  padding: '12px 24px',
-                  backgroundColor: '#10b981',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Resume
-              </button>
+                <button
+                  onClick={handleStartInterview}
+                  disabled={!(isConnected && isSharing && hrMicOn && candidateMicOn)}
+                  style={{
+                    padding: '12px 24px',
+                    backgroundColor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? '#10b981' : '#d1d5db',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? 'pointer' : 'not-allowed'
+                  }}
+                >
+                  Resume
+                </button>
               <button
                 onClick={handleStopInterview}
                 style={{
