@@ -1,366 +1,240 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
-from typing import List, Optional
-from datetime import datetime
-from database.db import get_db
-from models.user import User
-from models.interview import Interview, InterviewStatus, InterviewMode
-from utils.security import get_current_user
+"""Interview routes - REST API and WebSocket"""
+
+import os
+import json
+import time
 import logging
+from datetime import datetime
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+from utils.auth import verify_token
+from utils.broadcast import broadcast_update
+from core.state import interview_sessions, active_websockets, state_lock
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api/interview", tags=["interview"])
+router = APIRouter(tags=["interview"])
 
-# ============ Request/Response Models ============
+# ============ MODELS ============
 
-class TranscriptItem(BaseModel):
-    """Single transcript item"""
-    speaker: str  # "hr", "candidate", "system"
-    text: str
-    timestamp: Optional[float] = None
-
-class WeakPoint(BaseModel):
-    """Weak point identified during interview"""
-    question: str
-    analysis: str
-    skill: str
-
-class SuggestedQuestion(BaseModel):
-    """AI-suggested follow-up question"""
-    question: str
-    skill: str
-    type: str  # "follow_up", "skill_based"
-
-class InterviewSaveRequest(BaseModel):
-    """Request to save interview data"""
+class CreateInterviewRequest(BaseModel):
     candidate_name: str
-    candidate_email: Optional[str] = None
-    mode: str  # "mode1", "mode2", "mode3"
-    transcript: dict  # {speaker: text}
-    weak_points: List[dict] = []
-    questions_asked: List[str] = []
-    suggested_questions: List[dict] = []
-    
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "candidate_name": "John Doe",
-                "candidate_email": "john@example.com",
-                "mode": "mode1",
-                "transcript": {
-                    "hr": "Tell me about yourself",
-                    "candidate": "I am a software engineer..."
-                },
-                "weak_points": [
-                    {
-                        "question": "What is your weakness?",
-                        "analysis": "Candidate avoided the question",
-                        "skill": "Honesty"
-                    }
-                ],
-                "questions_asked": ["Tell me about yourself"],
-                "suggested_questions": []
-            }
-        }
+    candidate_email: str = None
+    mode: str = "mode1"
 
-class InterviewResponse(BaseModel):
-    """Interview response model"""
-    id: str
-    candidate_name: str
-    candidate_email: Optional[str]
-    mode: str
-    status: str
-    start_time: datetime
-    end_time: Optional[datetime]
-    duration: Optional[int]
-    transcript: dict
+class SaveInterviewRequest(BaseModel):
+    transcripts: list
     weak_points: list
-    questions_asked: list
-    
-    class Config:
-        from_attributes = True
+    questions_asked: list = []
+    suggested_questions: list = []
 
-class InterviewListResponse(BaseModel):
-    """Interview list item response"""
-    id: str
-    candidate_name: str
-    mode: str
-    status: str
-    start_time: datetime
-    end_time: Optional[datetime]
-    duration: Optional[int]
-    
-    class Config:
-        from_attributes = True
+# ============ REST API ENDPOINTS ============
 
-# ============ Save Interview ============
-
-@router.post("/save", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def save_interview(
-    request: InterviewSaveRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Save completed interview to database.
+@router.post("/api/interview/create")
+async def create_interview(request: CreateInterviewRequest):
+    """Create new interview"""
+    interview_id = f"interview_{int(time.time())}"
     
-    Args:
-        request: Interview data to save
-        current_user: Current authenticated user (HR)
-        db: Database session
-        
-    Returns:
-        Dictionary with success message and interview ID
-        
-    Raises:
-        HTTPException 400: Invalid request data
-        HTTPException 500: Failed to save interview
-    """
-    try:
-        # Create interview record
-        interview = Interview(
-            user_id=current_user.id,
-            candidate_name=request.candidate_name,
-            candidate_email=request.candidate_email,
-            mode=request.mode,
-            transcript=request.transcript,
-            weak_points=request.weak_points,
-            questions_asked=request.questions_asked,
-            suggested_questions=request.suggested_questions,
-            status=InterviewStatus.COMPLETED,
-            end_time=datetime.utcnow()
-        )
-        
-        # Calculate duration
-        interview.calculate_duration()
-        
-        # Save to database
-        db.add(interview)
-        db.commit()
-        db.refresh(interview)
-        
-        logger.info(f"Interview saved: {interview.id} by user {current_user.id}")
-        
-        return {
-            "status": "saved",
-            "interview_id": interview.id,
-            "message": f"Interview for {request.candidate_name} saved successfully"
+    async with state_lock:
+        interview_sessions[interview_id] = {
+            "id": interview_id,
+            "candidate_name": request.candidate_name,
+            "candidate_email": request.candidate_email,
+            "mode": request.mode,
+            "status": "created",
+            "start_time": datetime.now().isoformat(),
+            "transcripts": [],
+            "weak_points": []
         }
     
-    except Exception as e:
-        logger.error(f"Failed to save interview: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to save interview"
-        )
-
-# ============ Get Interview List ============
-
-@router.get("/list", response_model=List[InterviewListResponse])
-async def list_interviews(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 50
-):
-    """
-    Get all interviews for current user.
+    logger.info(f"✨ Interview created: {interview_id}")
     
-    Args:
-        current_user: Current authenticated user
-        db: Database session
-        skip: Number of records to skip (pagination)
-        limit: Maximum number of records to return
-        
-    Returns:
-        List of interviews for the user
+    return {
+        "id": interview_id,
+        "candidate_name": request.candidate_name,
+        "candidate_email": request.candidate_email,
+        "mode": request.mode,
+        "status": "created",
+        "start_time": datetime.now().isoformat(),
+        "transcripts": [],
+        "weak_points": []
+    }
+
+@router.post("/api/interview/{interview_id}/save")
+async def save_interview(interview_id: str, request: SaveInterviewRequest):
+    """Save interview data"""
+    async with state_lock:
+        if interview_id in interview_sessions:
+            interview_sessions[interview_id]["transcripts"] = request.transcripts
+            interview_sessions[interview_id]["weak_points"] = request.weak_points
+            interview_sessions[interview_id]["questions_asked"] = request.questions_asked
+            interview_sessions[interview_id]["suggested_questions"] = request.suggested_questions
+            interview_sessions[interview_id]["end_time"] = datetime.now().isoformat()
+            
+            # Save to JSON file
+            filename = f"interviews/{interview_id}.json"
+            os.makedirs("interviews", exist_ok=True)
+            with open(filename, "w") as f:
+                json.dump(interview_sessions[interview_id], f, indent=2)
+            
+            logger.info(f"💾 Interview saved: {filename}")
+            
+            return {"message": "Interview saved successfully"}
+    
+    return {"error": "Interview not found"}
+
+# ============ WEBSOCKET ENDPOINT ============
+
+@router.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
     """
+    WebSocket endpoint for real-time interview
+    """
+    await websocket.accept()
+    active_websockets.append(websocket)
+    
+    session_id = None
+    
     try:
-        interviews = db.query(Interview).filter(
-            Interview.user_id == current_user.id
-        ).order_by(
-            Interview.created_at.desc()
-        ).offset(skip).limit(limit).all()
-        
-        return interviews
+        while True:
+            data = await websocket.receive_json()
+            message_type = data.get("type")
+            
+            logger.info(f"📨 Received: {message_type}")
+            
+            # ===== START INTERVIEW =====
+            if message_type == "start":
+                token = data.get("token")
+                mode = data.get("mode", "mode1")
+                
+                # Verify token
+                username = verify_token(token)
+                if not username:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Invalid token"
+                    })
+                    continue
+                
+                # Create session
+                session_id = f"session_{int(time.time())}_{username}"
+                async with state_lock:
+                    interview_sessions[session_id] = {
+                        "id": session_id,
+                        "username": username,
+                        "mode": mode,
+                        "start_time": datetime.now().isoformat(),
+                        "transcripts": [],
+                        "weak_points": []
+                    }
+                
+                logger.info(f"✨ Interview started: {session_id} (mode: {mode})")
+                
+                await websocket.send_json({
+                    "type": "session_started",
+                    "session_id": session_id,
+                    "mode": mode
+                })
+            
+            # ===== NEW TRANSCRIPT =====
+            elif message_type == "transcript":
+                if not session_id:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "No active session"
+                    })
+                    continue
+                
+                payload = data.get("payload", {})
+                speaker = payload.get("speaker", "").lower()
+                text = payload.get("text", "")
+                timestamp = payload.get("timestamp", time.time())
+                
+                if not text.strip() or speaker not in ["hr", "candidate"]:
+                    continue
+                
+                # Store transcript
+                async with state_lock:
+                    if session_id in interview_sessions:
+                        transcript_entry = {
+                            "speaker": speaker,
+                            "text": text,
+                            "timestamp": timestamp
+                        }
+                        interview_sessions[session_id]["transcripts"].append(transcript_entry)
+                
+                logger.info(f"📝 {speaker.upper()}: {text[:50]}...")
+                
+                # Broadcast to all clients
+                await broadcast_update({
+                    "type": "new_transcript",
+                    "session_id": session_id,
+                    "payload": {
+                        "speaker": speaker,
+                        "text": text,
+                        "timestamp": timestamp
+                    }
+                })
+            
+            # ===== ADD WEAK POINTS =====
+            elif message_type == "weak_points":
+                if not session_id:
+                    continue
+                
+                weak_points = data.get("weak_points", [])
+                
+                async with state_lock:
+                    if session_id in interview_sessions:
+                        interview_sessions[session_id]["weak_points"].extend(weak_points)
+                
+                logger.info(f"💡 Added {len(weak_points)} weak points")
+                
+                await broadcast_update({
+                    "type": "weak_points_updated",
+                    "session_id": session_id,
+                    "weak_points": weak_points
+                })
+            
+            # ===== END INTERVIEW =====
+            elif message_type == "end":
+                if session_id:
+                    async with state_lock:
+                        if session_id in interview_sessions:
+                            interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
+                            
+                            # Save to JSON file
+                            filename = f"interviews/{session_id}.json"
+                            os.makedirs("interviews", exist_ok=True)
+                            with open(filename, "w") as f:
+                                json.dump(interview_sessions[session_id], f, indent=2)
+                            
+                            logger.info(f"💾 Interview saved: {filename}")
+                    
+                    await websocket.send_json({
+                        "type": "session_ended",
+                        "session_id": session_id
+                    })
+                    session_id = None
+    
+    except WebSocketDisconnect:
+        logger.info("🔌 WebSocket disconnected")
+        if session_id:
+            async with state_lock:
+                if session_id in interview_sessions:
+                    interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
+                    # Save on disconnect
+                    filename = f"interviews/{session_id}.json"
+                    os.makedirs("interviews", exist_ok=True)
+                    with open(filename, "w") as f:
+                        json.dump(interview_sessions[session_id], f, indent=2)
     
     except Exception as e:
-        logger.error(f"Failed to fetch interviews: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch interviews"
-        )
-
-# ============ Get Interview Details ============
-
-@router.get("/{interview_id}", response_model=InterviewResponse)
-async def get_interview(
-    interview_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Get detailed information about a specific interview.
+        logger.error(f"❌ WebSocket error: {e}")
+        await websocket.send_json({
+            "type": "error",
+            "message": str(e)
+        })
     
-    Args:
-        interview_id: Interview ID to retrieve
-        current_user: Current authenticated user
-        db: Database session
-        
-    Returns:
-        Complete interview data
-        
-    Raises:
-        HTTPException 404: Interview not found
-        HTTPException 403: User doesn't have access to this interview
-    """
-    try:
-        interview = db.query(Interview).filter(
-            Interview.id == interview_id,
-            Interview.user_id == current_user.id
-        ).first()
-        
-        if not interview:
-            logger.warning(f"Interview not found: {interview_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Interview not found"
-            )
-        
-        return interview
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to fetch interview: {str(e)}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch interview"
-        )
-
-# ============ Delete Interview ============
-
-@router.delete("/{interview_id}", status_code=status.HTTP_200_OK)
-async def delete_interview(
-    interview_id: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Delete an interview record.
-    
-    Args:
-        interview_id: Interview ID to delete
-        current_user: Current authenticated user
-        db: Database session
-        
-    Returns:
-        Dictionary with success message
-        
-    Raises:
-        HTTPException 404: Interview not found
-        HTTPException 403: User doesn't have access to delete
-    """
-    try:
-        interview = db.query(Interview).filter(
-            Interview.id == interview_id,
-            Interview.user_id == current_user.id
-        ).first()
-        
-        if not interview:
-            logger.warning(f"Interview not found for deletion: {interview_id}")
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Interview not found"
-            )
-        
-        db.delete(interview)
-        db.commit()
-        
-        logger.info(f"Interview deleted: {interview_id}")
-        
-        return {
-            "status": "deleted",
-            "message": f"Interview {interview_id} deleted successfully"
-        }
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to delete interview: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to delete interview"
-        )
-
-# ============ Update Interview Status ============
-
-@router.patch("/{interview_id}/status")
-async def update_interview_status(
-    interview_id: str,
-    status: str,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """
-    Update interview status.
-    
-    Args:
-        interview_id: Interview ID to update
-        status: New status ("ongoing", "completed", "cancelled")
-        current_user: Current authenticated user
-        db: Database session
-        
-    Returns:
-        Updated interview
-        
-    Raises:
-        HTTPException 400: Invalid status
-        HTTPException 404: Interview not found
-    """
-    try:
-        # Validate status
-        valid_statuses = [s.value for s in InterviewStatus]
-        if status not in valid_statuses:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid status. Must be one of: {valid_statuses}"
-            )
-        
-        interview = db.query(Interview).filter(
-            Interview.id == interview_id,
-            Interview.user_id == current_user.id
-        ).first()
-        
-        if not interview:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Interview not found"
-            )
-        
-        interview.status = status
-        if status == InterviewStatus.COMPLETED:
-            interview.end_time = datetime.utcnow()
-            interview.calculate_duration()
-        
-        db.add(interview)
-        db.commit()
-        db.refresh(interview)
-        
-        logger.info(f"Interview status updated: {interview_id} -> {status}")
-        
-        return interview
-    
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to update interview status: {str(e)}")
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to update interview status"
-        )
+    finally:
+        if websocket in active_websockets:
+            active_websockets.remove(websocket)
