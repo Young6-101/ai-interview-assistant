@@ -306,6 +306,9 @@ export const Interview: FC = () => {
     
     setIsAnalyzing(true)
     
+    // 清空之前的问题列表，准备生成新内容
+    context.clearSuggestedQuestions()
+    
     // Mode-based AI warning logic
     if (storedMode === 'mode2') {
       setShowAIWarning(true)
@@ -390,211 +393,211 @@ export const Interview: FC = () => {
       <div style={{ 
         height: '100vh',           // ✅ 固定高度填充视窗
         display: 'flex', 
-        flexDirection: 'column',
+        flexDirection: 'row',      // ✅ 改为水平布局
         width: '100%'              // ✅ 确保宽度填满
       }}>
-        <header style={{ 
-          padding: '20px 32px', 
-          borderBottom: '1px solid rgba(248,250,252,0.1)',
-          width: '100%',             // ✅ 确保header宽度填满
-          boxSizing: 'border-box'    // ✅ 包含padding在宽度内
+        {/* 左侧面板 - 视频和转录 */}
+        <div style={{ 
+          width: '50%',               // 左边一半宽度
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
+          backgroundColor: 'white'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '32px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Guided' : storedMode === 'mode2' ? 'Open Q&A' : 'Expert'}</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {/* Status indicator */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ width: '8px', height: '8px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171' }} />
-                <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{isConnected ? 'Connected' : 'Waiting...'}</span>
-              </div>
-            </div>
-            <button
-              onClick={handleLogout}
-              style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(248,250,252,0.3)', background: 'rgba(248,250,252,0.05)', color: '#cbd5f5', fontSize: '13px', cursor: 'pointer' }}
-            >
-              Logout
-            </button>
-          </div>
-        </header>
-
-        {error && (
-          <div style={{ margin: '16px 32px 0', padding: '12px 16px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', fontSize: '13px' }}>
-            {error}
-          </div>
-        )}
-        
-        {/* AI Warning Banner */}
-        {showAIWarning && (
-          <div style={{
-            margin: '16px 32px 0',
-            padding: '16px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
-            color: '#92400e',
-            fontSize: '14px',
-            fontWeight: 600,
-            textAlign: 'center',
-            border: '2px solid #fcd34d',
-            boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
-            animation: storedMode === 'mode2' ? 'pulse 2s ease-in-out infinite' : 'none'
-          }}>
-            ⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW
-          </div>
-        )}
-
-        <main style={{ 
-          flex: 1, 
-          display: 'grid', 
-          gridTemplateColumns: '1fr 1fr',  
-          gap: '24px', 
-          padding: '24px 32px', 
-          height: 'calc(100vh - 120px)',   
-          width: '100%',           
-          boxSizing: 'border-box',  
-          overflow: 'hidden'       
-        }}>
-          <section style={{ 
+          <div style={{ 
+            backgroundColor: 'white', 
+            borderRadius: '16px', 
+            margin: '20px',
+            padding: '20px', 
+            boxShadow: '0 25px 60px rgba(15,23,42,0.45)', 
             display: 'flex', 
             flexDirection: 'column', 
-            gap: '20px', 
-            height: '100%',          // ✅ 填满高度
-            overflow: 'hidden'       // ✅ section不滚动
+            gap: '16px', 
+            height: 'calc(50vh - 40px)',        // 上半部分
+            overflow: 'hidden'     
           }}>
-            <div style={{ 
-              backgroundColor: 'white', 
-              borderRadius: '16px', 
-              padding: '20px', 
-              boxShadow: '0 25px 60px rgba(15,23,42,0.45)', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '16px', 
-              height: '100%',        // ✅ 填满section高度
-              overflow: 'hidden'     // ✅ 主box不滚动
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center' }}>
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                <button
+                  onClick={hrMicOn ? handleStopHrMic : handleStartHrMic}
+                  style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: hrMicOn ? '#dc2626' : '#10b981', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {hrMicOn ? 'Stop HR Mic' : 'Start HR Mic'}
+                </button>
+                {context.interviewState === 'NOT_STARTED' && (
                   <button
-                    onClick={hrMicOn ? handleStopHrMic : handleStartHrMic}
-                    style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: hrMicOn ? '#dc2626' : '#10b981', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                    onClick={handleStartInterview}
+                    disabled={!canStartInterview || isStarting}
+                    style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: canStartInterview && !isStarting ? '#2563eb' : '#cbd5f5', color: '#fff', fontWeight: 600, cursor: canStartInterview && !isStarting ? 'pointer' : 'not-allowed' }}
                   >
-                    {hrMicOn ? 'Stop HR Mic' : 'Start HR Mic'}
+                    {isStarting ? 'Starting...' : 'Start Interview'}
                   </button>
-                  {context.interviewState === 'NOT_STARTED' && (
-                    <button
-                      onClick={handleStartInterview}
-                      disabled={!canStartInterview || isStarting}
-                      style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: canStartInterview && !isStarting ? '#2563eb' : '#cbd5f5', color: '#fff', fontWeight: 600, cursor: canStartInterview && !isStarting ? 'pointer' : 'not-allowed' }}
-                    >
-                      {isStarting ? 'Starting...' : 'Start Interview'}
-                    </button>
-                  )}
-                  {context.interviewState === 'RUNNING' && (
-                    <button
-                      onClick={handleStopInterview}
-                      style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      End Interview
-                    </button>
-                  )}
-                </div>
-              </div>
-              
-              <div style={{ 
-                borderRadius: '16px', 
-                overflow: 'hidden', 
-                position: 'relative', 
-                flex: 1,               // ✅ 占用可用空间
-                backgroundColor: '#0f172a', 
-                minHeight: '200px'     // ✅ 最小高度
-              }}>
-                {isSharing && screenStream ? (
-                  <div style={{ width: '100%', height: '100%' }}>
-                    <video
-                      className='meeting-room-video'
-                      ref={(el) => { if (el && el.srcObject !== screenStream) el.srcObject = screenStream }}
-                      autoPlay
-                      muted
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    <div style={{ position: 'absolute', top: '12px', left: '12px', padding: '6px 10px', borderRadius: '999px', backgroundColor: 'rgba(15,23,42,0.8)', color: '#f8fafc', fontSize: '12px', fontWeight: 600 }}>
-                      SHARING
-                    </div>
-                    <div style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={stopMeetingRoom}
-                        style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Stop
-                      </button>
-                      <button
-                        onClick={handleReselectMeetingRoom}
-                        style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
-                      >
-                        Reselect
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '32px', textAlign: 'center', color: '#f8fafc' }}>
-                    <p style={{ marginBottom: '16px', fontSize: '18px' }}>Ready when you are</p>
-                    <button
-                      onClick={handleSelectMeetingRoom}
-                      disabled={isSelecting}
-                      style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontWeight: 600, cursor: isSelecting ? 'not-allowed' : 'pointer' }}
-                    >
-                      {isSelecting ? 'Selecting...' : 'Choose meeting room'}
-                    </button>
-                  </div>
+                )}
+                {context.interviewState === 'RUNNING' && (
+                  <button
+                    onClick={handleStopInterview}
+                    style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    End Interview
+                  </button>
                 )}
               </div>
-              
-              {/* Transcript Area */}
-              <div style={{ 
-                backgroundColor: 'white', 
-                borderRadius: '16px', 
-                padding: '20px', 
-                boxShadow: '0 25px 60px rgba(15,23,42,0.2)', 
+            </div>
+            
+            <div style={{ 
+              borderRadius: '16px', 
+              overflow: 'hidden', 
+              position: 'relative', 
+              flex: 1,               
+              backgroundColor: '#0f172a', 
+              minHeight: '200px'     
+            }}>
+              {isSharing && screenStream ? (
+                <div style={{ width: '100%', height: '100%' }}>
+                  <video
+                    className='meeting-room-video'
+                    ref={(el) => { if (el && el.srcObject !== screenStream) el.srcObject = screenStream }}
+                    autoPlay
+                    muted
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  <div style={{ position: 'absolute', top: '12px', left: '12px', padding: '6px 10px', borderRadius: '999px', backgroundColor: 'rgba(15,23,42,0.8)', color: '#f8fafc', fontSize: '12px', fontWeight: 600 }}>
+                    SHARING
+                  </div>
+                  <div style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={stopMeetingRoom}
+                      style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Stop
+                    </button>
+                    <button
+                      onClick={handleReselectMeetingRoom}
+                      style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      Reselect
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ padding: '32px', textAlign: 'center', color: '#f8fafc' }}>
+                  <p style={{ marginBottom: '16px', fontSize: '18px' }}>Ready when you are</p>
+                  <button
+                    onClick={handleSelectMeetingRoom}
+                    disabled={isSelecting}
+                    style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontWeight: 600, cursor: isSelecting ? 'not-allowed' : 'pointer' }}
+                  >
+                    {isSelecting ? 'Selecting...' : 'Choose meeting room'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+          
+          {/* Transcript Area */}
+          <div style={{ 
+            backgroundColor: 'white', 
+            borderRadius: '16px', 
+            margin: '20px',
+            padding: '20px', 
+            boxShadow: '0 25px 60px rgba(15,23,42,0.2)', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '12px', 
+            height: 'calc(50vh - 40px)',    // 下半部分
+            overflow: 'hidden'     
+          }}>
+            <h3 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Transcript</h3>
+            <div 
+              ref={transcriptContainerRef}
+              style={{ 
+                flex: 1, 
+                overflowY: 'auto',        
                 display: 'flex', 
                 flexDirection: 'column', 
-                gap: '12px', 
-                flex: 1,               // ✅ 占用可用空间
-                minHeight: '200px',    // ✅ 最小高度
-                overflow: 'hidden'     // ✅ container不滚动
-              }}>
-                <h3 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Transcript</h3>
-                <div 
-                  ref={transcriptContainerRef}
-                  style={{ 
-                    flex: 1, 
-                    overflowY: 'auto',        // ✅ 内容区域可滚动
-                    display: 'flex', 
-                    flexDirection: 'column', 
-                    gap: '2px', 
-                    padding: '8px', 
-                    backgroundColor: '#f8fafc', 
-                    borderRadius: '8px', 
-                    border: '1px solid #e2e8f0' 
-                  }}
-                >
-                  {/* Will be populated by DOM directly */}
+                gap: '2px', 
+                padding: '8px', 
+                backgroundColor: '#f8fafc', 
+                borderRadius: '8px', 
+                border: '1px solid #e2e8f0' 
+              }}
+            >
+              {/* Will be populated by DOM directly */}
+            </div>
+          </div>
+        </div>
+
+        {/* 右侧面板 - Header、AI警告和问题 */}
+        <div style={{ 
+          width: '50%',               // 右边一半宽度
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
+          background: 'linear-gradient(180deg, #0f172a, #1f2a44)'
+        }}>
+          {/* Header信息 */}
+          <header style={{ 
+            padding: '20px 32px', 
+            borderBottom: '1px solid rgba(248,250,252,0.1)',
+            boxSizing: 'border-box'    
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '32px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Guided' : storedMode === 'mode2' ? 'Open Q&A' : 'Expert'}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                {/* Status indicator */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ width: '8px', height: '8px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171' }} />
+                  <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{isConnected ? 'Connected' : 'Waiting...'}</span>
                 </div>
               </div>
+              <button
+                onClick={handleLogout}
+                style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(248,250,252,0.3)', background: 'rgba(248,250,252,0.05)', color: '#cbd5f5', fontSize: '13px', cursor: 'pointer' }}
+              >
+                Logout
+              </button>
             </div>
-          </section>
+          </header>
+
+          {error && (
+            <div style={{ margin: '16px 32px 0', padding: '12px 16px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', fontSize: '13px' }}>
+              {error}
+            </div>
+          )}
+          
+          {/* AI Warning Banner */}
+          {showAIWarning && (
+            <div style={{
+              margin: '16px 32px 0',
+              padding: '16px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+              color: '#92400e',
+              fontSize: '14px',
+              fontWeight: 600,
+              textAlign: 'center',
+              border: '2px solid #fcd34d',
+              boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
+              animation: storedMode === 'mode2' ? 'pulse 2s ease-in-out infinite' : 'none'
+            }}>
+              ⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW
+            </div>
+          )}
 
           {/* Suggestions Sidebar */}
           <aside style={{ 
             backgroundColor: 'white', 
             borderRadius: '16px', 
+            margin: '24px 32px',
             padding: '20px', 
             boxShadow: '0 25px 60px rgba(15,23,42,0.25)', 
             display: 'flex', 
             flexDirection: 'column', 
             gap: '12px', 
-            height: '100%',          // ✅ 填满grid高度
-            overflow: 'hidden'       // ✅ aside不滚动
+            flex: 1,          
+            overflow: 'hidden'       
           }}>
             {/* Title always visible */}
             <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>Follow-up Questions</h3>
@@ -642,7 +645,7 @@ export const Interview: FC = () => {
               display: 'flex', 
               flexDirection: 'column', 
               gap: '10px', 
-              overflowY: 'auto',       // ✅ 问题列表可滚动
+              overflowY: 'auto',       
               minHeight: 0 
             }}>
               {context.suggestedQuestions.length === 0 ? (
@@ -654,7 +657,7 @@ export const Interview: FC = () => {
               )}
             </div>
           </aside>
-        </main>
+        </div>
       </div>
     </div>
   )

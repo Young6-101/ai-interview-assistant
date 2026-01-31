@@ -2,9 +2,9 @@
 
 html, body {
   margin: 0;                     
-  padding: 0;                     /* ✅ 移除默认内边距 */
-  width: 100vw;                   /* ✅ 填充整个宽度 */
-  height: 100vh;                  /* ✅ 填充整个高度 */
+  padding: 0;                    
+  width: 100vw;                  
+  height: 100vh;                 
 }
 
 body {
@@ -13,8 +13,8 @@ body {
 }
 
 #root {
-  width: 100vw;                   /* ✅ 根元素填充整个宽度 */
-  height: 100vh;                  /* ✅ 根元素填充整个高度 */
+  width: 100vw;                   
+  height: 100vh;                 
 }
 
 .meeting-room-video {

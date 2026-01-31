@@ -48,6 +48,7 @@ interface InterviewContextType {
   
   suggestedQuestions: SuggestedQuestion[];
   addSuggestedQuestion: (question: SuggestedQuestion) => void;
+  clearSuggestedQuestions: () => void;
   
   topics: Topic[];
   addTopic: (topic: Topic) => void;
@@ -110,6 +111,10 @@ export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children 
     setSuggestedQuestions((prev) => [...prev, question]);
   }, []);
 
+  const clearSuggestedQuestions = useCallback(() => {
+    setSuggestedQuestions([]);
+  }, []);
+
   const addTopic = useCallback((topic: Topic) => {
     setTopics((prev) => [...prev, topic]);
   }, []);
@@ -131,6 +136,7 @@ export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children 
     updateWeakPoint,
     suggestedQuestions,
     addSuggestedQuestion,
+    clearSuggestedQuestions,
     topics,
     addTopic,
     updateTopic,
