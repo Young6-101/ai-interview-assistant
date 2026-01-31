@@ -354,11 +354,20 @@ export const useWebSocketOptimized = () => {
     }
   }, [])
 
+  /**
+   * Request AI analysis manually
+   */
+  const requestAnalysis = useCallback(() => {
+    console.log('🤖 Requesting AI analysis...')
+    return send({ type: 'request_analysis' })
+  }, [send])
+
   return {
     isConnected: context.isWebSocketConnected,
     connect,
     send,
     sendTranscript,
+    requestAnalysis,
     startInterview: useCallback(() => {
       const token = localStorage.getItem('token') || localStorage.getItem('access_token')
       const mode = localStorage.getItem('interview_mode') || 'mode1'

@@ -28,7 +28,8 @@ export const Interview: FC = () => {
    * 1. Initialize custom hooks.
    * Now using the optimized useWebSocketOptimized that handles DOM updates directly
    */
-  const { isConnected, connect, startInterview, stopInterview, sendTranscript, disconnect, setTranscriptContainer } = useWebSocketOptimized()
+  const { isConnected, connect, startInterview, stopInterview, sendTranscript, requestAnalysis, disconnect, setTranscriptContainer } = useWebSocketOptimized()
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const { screenStream, isSharing, selectMeetingRoom, stopMeetingRoom } = useMeetingRoom()
 
   /**
@@ -269,6 +270,26 @@ export const Interview: FC = () => {
   }
 
   /**
+   * Request AI analysis manually
+   */
+  const handleRequestAnalysis = async () => {
+    if (!isConnected || context.interviewState !== 'RUNNING') {
+      setError('⚠️ Interview must be running to analyze')
+      return
+    }
+    
+    setIsAnalyzing(true)
+    try {
+      requestAnalysis()
+      // 按钮会在收到响应后自动恢复
+      setTimeout(() => setIsAnalyzing(false), 3000)
+    } catch (err) {
+      setError('❌ Analysis request failed')
+      setIsAnalyzing(false)
+    }
+  }
+
+  /**
    * Handles re-selection of the meeting room.
    * It explicitly stops existing tracks before requesting a new one 
    * to prevent hardware/permission conflicts.
@@ -327,10 +348,48 @@ export const Interview: FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Guided' : storedMode === 'mode2' ? 'Open Q&A' : 'Expert'}</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, justifyContent: 'center' }}>
-              <span style={{ fontSize: '14px', color: '#cbd5f5' }}>Status:</span>
-              <span style={{ width: '8px', height: '8px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171' }} />
-              <span style={{ fontSize: '14px', color: '#e2e8f0' }}>{isConnected ? 'Connected' : 'Waiting...'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              {/* AI Analysis Button */}
+              <button
+                onClick={handleRequestAnalysis}
+                disabled={!isConnected || context.interviewState !== 'RUNNING' || isAnalyzing}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: '10px',
+                  border: 'none',
+                  background: isAnalyzing 
+                    ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' 
+                    : context.interviewState === 'RUNNING' 
+                      ? 'linear-gradient(135deg, #8b5cf6, #a855f7)' 
+                      : '#475569',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: '13px',
+                  cursor: context.interviewState === 'RUNNING' && !isAnalyzing ? 'pointer' : 'not-allowed',
+                  opacity: context.interviewState === 'RUNNING' ? 1 : 0.5,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                {isAnalyzing ? (
+                  <>
+                    <span style={{ animation: 'spin 1s linear infinite' }}>⏳</span>
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    🤖 AI Analyze
+                  </>
+                )}
+              </button>
+              
+              {/* Status indicator */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171' }} />
+                <span style={{ fontSize: '13px', color: '#e2e8f0' }}>{isConnected ? 'Connected' : 'Waiting...'}</span>
+              </div>
             </div>
             <button
               onClick={handleLogout}

@@ -205,71 +205,94 @@ async def websocket_endpoint(websocket: WebSocket):
                         "timestamp": timestamp
                     }
                 })
+            
+            # ===== MANUAL AI ANALYSIS REQUEST =====
+            elif message_type == "request_analysis":
+                if not session_id:
+                    continue
                 
-                # ===== OpenAI Analysis =====
+                logger.info("🤖 Manual AI analysis requested")
+                
                 try:
                     analyzer = RealtimeAnalyzer()
                     
-                    if speaker == "hr":
-                        # Classify HR question
-                        classification = await analyzer.classify_question(text)
+                    # Get all transcripts from session
+                    transcripts = []
+                    last_hr_question = None
+                    last_candidate_answer = None
+                    
+                    async with state_lock:
+                        if session_id in interview_sessions:
+                            transcripts = interview_sessions[session_id].get("transcripts", [])
+                    
+                    # Find the last HR question and candidate answer
+                    for t in reversed(transcripts):
+                        if t["speaker"] == "candidate" and not last_candidate_answer:
+                            last_candidate_answer = t["text"]
+                        elif t["speaker"] == "hr" and not last_hr_question:
+                            last_hr_question = t["text"]
+                        if last_hr_question and last_candidate_answer:
+                            break
+                    
+                    if last_hr_question:
+                        # Classify the HR question
+                        classification = await analyzer.classify_question(last_hr_question)
                         logger.info(f"🎯 HR Question Classified: {classification.get('question_type')}")
                         
-                        # Store last HR question for answer analysis
-                        async with state_lock:
-                            if session_id in interview_sessions:
-                                interview_sessions[session_id]["last_hr_question"] = text
-                                interview_sessions[session_id]["last_classification"] = classification
-                        
-                        await broadcast_update({
+                        # Send only to the requesting client
+                        await websocket.send_json({
                             "type": "hr_question_classified",
                             "session_id": session_id,
                             "classification": classification
                         })
                     
-                    elif speaker == "candidate":
-                        # Get last HR question
-                        last_question = None
-                        async with state_lock:
-                            if session_id in interview_sessions:
-                                last_question = interview_sessions[session_id].get("last_hr_question")
+                    if last_hr_question and last_candidate_answer:
+                        # Analyze candidate's answer
+                        analysis = await analyzer.analyze_answer(last_hr_question, last_candidate_answer, "star")
+                        logger.info(f"📊 Answer analyzed, score: {analysis.get('quality_score')}")
                         
-                        if last_question:
-                            # Analyze candidate's answer
-                            analysis = await analyzer.analyze_answer(last_question, text, "star")
-                            logger.info(f"📊 Answer analyzed, score: {analysis.get('quality_score')}")
+                        # Store weak points
+                        weak_points = analysis.get("weak_points", [])
+                        if weak_points:
+                            async with state_lock:
+                                if session_id in interview_sessions:
+                                    interview_sessions[session_id]["weak_points"].extend(weak_points)
                             
-                            # Store weak points
-                            weak_points = analysis.get("weak_points", [])
-                            if weak_points:
-                                async with state_lock:
-                                    if session_id in interview_sessions:
-                                        interview_sessions[session_id]["weak_points"].extend(weak_points)
-                                
-                                await broadcast_update({
-                                    "type": "weak_points_updated",
-                                    "session_id": session_id,
-                                    "weak_points": weak_points
-                                })
-                            
-                            # Generate follow-up questions
-                            if weak_points:
-                                weak_area = weak_points[0].get("component", "the topic")
-                                followups = await analyzer.generate_followup_questions(
-                                    f"Q: {last_question}\nA: {text}",
-                                    weak_area,
-                                    3
-                                )
-                                logger.info(f"💡 Generated {len(followups)} follow-up questions")
-                                
-                                await broadcast_update({
-                                    "type": "suggested_questions",
-                                    "session_id": session_id,
-                                    "questions": followups
-                                })
-                
+                            # Send only to the requesting client
+                            await websocket.send_json({
+                                "type": "weak_points_updated",
+                                "session_id": session_id,
+                                "weak_points": weak_points
+                            })
+                        
+                        # Generate follow-up questions
+                        weak_area = weak_points[0].get("component", "the topic") if weak_points else "the answer"
+                        followups = await analyzer.generate_followup_questions(
+                            f"Q: {last_hr_question}\nA: {last_candidate_answer}",
+                            weak_area,
+                            3
+                        )
+                        logger.info(f"💡 Generated {len(followups)} follow-up questions")
+                        
+                        # Send only to the requesting client
+                        await websocket.send_json({
+                            "type": "suggested_questions",
+                            "session_id": session_id,
+                            "questions": followups
+                        })
+                    
+                    # Send analysis complete notification
+                    await websocket.send_json({
+                        "type": "analysis_complete",
+                        "session_id": session_id
+                    })
+                    
                 except Exception as e:
                     logger.error(f"❌ OpenAI analysis error: {e}")
+                    await websocket.send_json({
+                        "type": "analysis_error",
+                        "message": str(e)
+                    })
             
             # ===== ADD WEAK POINTS =====
             elif message_type == "weak_points":
