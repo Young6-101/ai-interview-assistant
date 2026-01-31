@@ -237,14 +237,14 @@ export const useWebSocketOptimized = () => {
          * ✅ Weak points - keep in Context
          */
         case 'weak_points_updated': {
-          const payload = data.payload || data
-          const points = Array.isArray(payload) ? payload : [payload]
-          points.forEach((point: any) => {
+          const weakPoints = data.weak_points || data.payload || []
+          const points = Array.isArray(weakPoints) ? weakPoints : [weakPoints]
+          points.forEach((point: any, index: number) => {
             contextRef.current.addWeakPoint({
-              id: point.id || `${Date.now()}`,
-              category: point.category || 'General',
-              description: point.description || '',
-              details: point.details,
+              id: point.id || `wp_${Date.now()}_${index}`,
+              category: point.component || point.category || 'General',
+              description: point.question || point.description || '',
+              details: point.severity || point.details,
               timestamp: Date.now()
             })
           })
@@ -255,15 +255,19 @@ export const useWebSocketOptimized = () => {
          * ✅ Suggested questions - keep in Context
          */
         case 'suggested_questions': {
-          const payload = data.payload || data
-          const questions = Array.isArray(payload) ? payload : [payload]
-          questions.forEach((q: any) => {
-            contextRef.current.addSuggestedQuestion({
-              id: q.id || `${Date.now()}`,
-              text: q.text || q.question || '',
-              skill: q.skill || q.category || 'General',
-              timestamp: Date.now()
-            })
+          const questions = data.questions || data.payload || []
+          const questionList = Array.isArray(questions) ? questions : [questions]
+          questionList.forEach((q: any, index: number) => {
+            // Handle both string and object formats
+            const questionText = typeof q === 'string' ? q : (q.text || q.question || '')
+            if (questionText) {
+              contextRef.current.addSuggestedQuestion({
+                id: `q_${Date.now()}_${index}`,
+                text: questionText,
+                skill: typeof q === 'object' ? (q.skill || q.category || 'Follow-up') : 'Follow-up',
+                timestamp: Date.now()
+              })
+            }
           })
           break
         }

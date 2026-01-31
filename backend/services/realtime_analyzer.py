@@ -6,7 +6,14 @@ Async utility methods for question classification and weak points analysis
 import os
 import json
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional
+
+# 确保加载 .env 文件
+from dotenv import load_dotenv
+env_path = Path(__file__).parent.parent / '.env'
+load_dotenv(env_path)
+
 from openai import AsyncOpenAI
 
 logger = logging.getLogger(__name__)
@@ -23,6 +30,10 @@ class RealtimeAnalyzer:
             api_key: OpenAI API key (defaults to OPENAI_API_KEY env var)
         """
         self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        if not self.api_key:
+            logger.error("❌ OPENAI_API_KEY not found!")
+        else:
+            logger.info(f"✅ OpenAI API Key loaded: {self.api_key[:20]}...")
         self.client = AsyncOpenAI(api_key=self.api_key)
 
     async def classify_question(self, text: str) -> Dict:

@@ -11,6 +11,7 @@ from pydantic import BaseModel
 from utils.auth import verify_token
 from utils.broadcast import broadcast_update
 from core.state import interview_sessions, active_websockets, state_lock
+from services.realtime_analyzer import RealtimeAnalyzer
 
 logger = logging.getLogger(__name__)
 
@@ -204,6 +205,71 @@ async def websocket_endpoint(websocket: WebSocket):
                         "timestamp": timestamp
                     }
                 })
+                
+                # ===== OpenAI Analysis =====
+                try:
+                    analyzer = RealtimeAnalyzer()
+                    
+                    if speaker == "hr":
+                        # Classify HR question
+                        classification = await analyzer.classify_question(text)
+                        logger.info(f"🎯 HR Question Classified: {classification.get('question_type')}")
+                        
+                        # Store last HR question for answer analysis
+                        async with state_lock:
+                            if session_id in interview_sessions:
+                                interview_sessions[session_id]["last_hr_question"] = text
+                                interview_sessions[session_id]["last_classification"] = classification
+                        
+                        await broadcast_update({
+                            "type": "hr_question_classified",
+                            "session_id": session_id,
+                            "classification": classification
+                        })
+                    
+                    elif speaker == "candidate":
+                        # Get last HR question
+                        last_question = None
+                        async with state_lock:
+                            if session_id in interview_sessions:
+                                last_question = interview_sessions[session_id].get("last_hr_question")
+                        
+                        if last_question:
+                            # Analyze candidate's answer
+                            analysis = await analyzer.analyze_answer(last_question, text, "star")
+                            logger.info(f"📊 Answer analyzed, score: {analysis.get('quality_score')}")
+                            
+                            # Store weak points
+                            weak_points = analysis.get("weak_points", [])
+                            if weak_points:
+                                async with state_lock:
+                                    if session_id in interview_sessions:
+                                        interview_sessions[session_id]["weak_points"].extend(weak_points)
+                                
+                                await broadcast_update({
+                                    "type": "weak_points_updated",
+                                    "session_id": session_id,
+                                    "weak_points": weak_points
+                                })
+                            
+                            # Generate follow-up questions
+                            if weak_points:
+                                weak_area = weak_points[0].get("component", "the topic")
+                                followups = await analyzer.generate_followup_questions(
+                                    f"Q: {last_question}\nA: {text}",
+                                    weak_area,
+                                    3
+                                )
+                                logger.info(f"💡 Generated {len(followups)} follow-up questions")
+                                
+                                await broadcast_update({
+                                    "type": "suggested_questions",
+                                    "session_id": session_id,
+                                    "questions": followups
+                                })
+                
+                except Exception as e:
+                    logger.error(f"❌ OpenAI analysis error: {e}")
             
             # ===== ADD WEAK POINTS =====
             elif message_type == "weak_points":
