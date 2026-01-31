@@ -43,11 +43,16 @@ export const Login = () => {
   return (
     <div
       style={{
+        position: 'fixed',          // ✅ 固定定位，防止滚动
+        top: 0,                     // ✅ 覆盖整个视窗
+        left: 0,                    // ✅ 覆盖整个视窗  
+        width: '100vw',             // ✅ 填充整个宽度
+        height: '100vh',            // ✅ 填充整个高度
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        minHeight: '100vh',
-        backgroundColor: '#0f172a'
+        backgroundColor: '#0f172a',  // ✅ 背景色填充满
+        overflow: 'hidden'          // ✅ 禁止滚动
       }}
     >
       <div

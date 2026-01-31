@@ -375,9 +375,30 @@ export const Interview: FC = () => {
 
   // ============ RENDER (JSX) ============
   return (
-    <div style={{ height: '100vh', background: 'linear-gradient(180deg, #0f172a, #1f2a44)', color: '#0f172a', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <header style={{ padding: '20px 32px', borderBottom: '1px solid rgba(248,250,252,0.1)' }}>
+    <div style={{ 
+      position: 'fixed',           // ✅ 固定定位，填充整个屏幕
+      top: 0,                      // ✅ 从屏幕顶部开始
+      left: 0,                     // ✅ 从屏幕左侧开始
+      width: '100vw',              // ✅ 填充整个宽度
+      height: '100vh',             // ✅ 填充整个高度
+      background: 'linear-gradient(180deg, #0f172a, #1f2a44)', 
+      color: '#0f172a', 
+      display: 'flex', 
+      flexDirection: 'column',
+      overflow: 'hidden'           // ✅ 固定页面，禁止滚动
+    }}>
+      <div style={{ 
+        height: '100vh',           // ✅ 固定高度填充视窗
+        display: 'flex', 
+        flexDirection: 'column',
+        width: '100%'              // ✅ 确保宽度填满
+      }}>
+        <header style={{ 
+          padding: '20px 32px', 
+          borderBottom: '1px solid rgba(248,250,252,0.1)',
+          width: '100%',             // ✅ 确保header宽度填满
+          boxSizing: 'border-box'    // ✅ 包含padding在宽度内
+        }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '32px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Guided' : storedMode === 'mode2' ? 'Open Q&A' : 'Expert'}</span>
@@ -423,9 +444,35 @@ export const Interview: FC = () => {
           </div>
         )}
 
-        <main style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px', padding: '24px 32px', minHeight: 0 }}>
-          <section style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 25px 60px rgba(15,23,42,0.45)', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, minHeight: 0 }}>
+        <main style={{ 
+          flex: 1, 
+          display: 'grid', 
+          gridTemplateColumns: '1fr 1fr',  
+          gap: '24px', 
+          padding: '24px 32px', 
+          height: 'calc(100vh - 120px)',   
+          width: '100%',           
+          boxSizing: 'border-box',  
+          overflow: 'hidden'       
+        }}>
+          <section style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '20px', 
+            height: '100%',          // ✅ 填满高度
+            overflow: 'hidden'       // ✅ section不滚动
+          }}>
+            <div style={{ 
+              backgroundColor: 'white', 
+              borderRadius: '16px', 
+              padding: '20px', 
+              boxShadow: '0 25px 60px rgba(15,23,42,0.45)', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '16px', 
+              height: '100%',        // ✅ 填满section高度
+              overflow: 'hidden'     // ✅ 主box不滚动
+            }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
@@ -454,7 +501,14 @@ export const Interview: FC = () => {
                 </div>
               </div>
               
-              <div style={{ borderRadius: '16px', overflow: 'hidden', position: 'relative', flex: 1, backgroundColor: '#0f172a', minHeight: 0 }}>
+              <div style={{ 
+                borderRadius: '16px', 
+                overflow: 'hidden', 
+                position: 'relative', 
+                flex: 1,               // ✅ 占用可用空间
+                backgroundColor: '#0f172a', 
+                minHeight: '200px'     // ✅ 最小高度
+              }}>
                 {isSharing && screenStream ? (
                   <div style={{ width: '100%', height: '100%' }}>
                     <video
@@ -497,11 +551,32 @@ export const Interview: FC = () => {
               </div>
               
               {/* Transcript Area */}
-              <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 25px 60px rgba(15,23,42,0.2)', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, minHeight: 0 }}>
+              <div style={{ 
+                backgroundColor: 'white', 
+                borderRadius: '16px', 
+                padding: '20px', 
+                boxShadow: '0 25px 60px rgba(15,23,42,0.2)', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                gap: '12px', 
+                flex: 1,               // ✅ 占用可用空间
+                minHeight: '200px',    // ✅ 最小高度
+                overflow: 'hidden'     // ✅ container不滚动
+              }}>
                 <h3 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Transcript</h3>
                 <div 
                   ref={transcriptContainerRef}
-                  style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px', minHeight: 0, padding: '8px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}
+                  style={{ 
+                    flex: 1, 
+                    overflowY: 'auto',        // ✅ 内容区域可滚动
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    gap: '2px', 
+                    padding: '8px', 
+                    backgroundColor: '#f8fafc', 
+                    borderRadius: '8px', 
+                    border: '1px solid #e2e8f0' 
+                  }}
                 >
                   {/* Will be populated by DOM directly */}
                 </div>
@@ -510,7 +585,17 @@ export const Interview: FC = () => {
           </section>
 
           {/* Suggestions Sidebar */}
-          <aside style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 25px 60px rgba(15,23,42,0.25)', display: 'flex', flexDirection: 'column', gap: '12px', minHeight: 0 }}>
+          <aside style={{ 
+            backgroundColor: 'white', 
+            borderRadius: '16px', 
+            padding: '20px', 
+            boxShadow: '0 25px 60px rgba(15,23,42,0.25)', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            gap: '12px', 
+            height: '100%',          // ✅ 填满grid高度
+            overflow: 'hidden'       // ✅ aside不滚动
+          }}>
             {/* Title always visible */}
             <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>Follow-up Questions</h3>
             
@@ -552,7 +637,14 @@ export const Interview: FC = () => {
             </button>
             
             {/* Questions List */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', minHeight: 0 }}>
+            <div style={{ 
+              flex: 1, 
+              display: 'flex', 
+              flexDirection: 'column', 
+              gap: '10px', 
+              overflowY: 'auto',       // ✅ 问题列表可滚动
+              minHeight: 0 
+            }}>
               {context.suggestedQuestions.length === 0 ? (
                 <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>Click the button above to generate questions</p>
               ) : (
