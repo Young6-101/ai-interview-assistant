@@ -349,42 +349,6 @@ export const Interview: FC = () => {
               <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Guided' : storedMode === 'mode2' ? 'Open Q&A' : 'Expert'}</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              {/* AI Analysis Button */}
-              <button
-                onClick={handleRequestAnalysis}
-                disabled={!isConnected || context.interviewState !== 'RUNNING' || isAnalyzing}
-                style={{
-                  padding: '8px 16px',
-                  borderRadius: '10px',
-                  border: 'none',
-                  background: isAnalyzing 
-                    ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' 
-                    : context.interviewState === 'RUNNING' 
-                      ? 'linear-gradient(135deg, #8b5cf6, #a855f7)' 
-                      : '#475569',
-                  color: '#fff',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: context.interviewState === 'RUNNING' && !isAnalyzing ? 'pointer' : 'not-allowed',
-                  opacity: context.interviewState === 'RUNNING' ? 1 : 0.5,
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '6px',
-                  transition: 'all 0.2s ease'
-                }}
-              >
-                {isAnalyzing ? (
-                  <>
-                    <span style={{ animation: 'spin 1s linear infinite' }}>⏳</span>
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    🤖 AI Analyze
-                  </>
-                )}
-              </button>
-              
               {/* Status indicator */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ width: '8px', height: '8px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171' }} />
@@ -494,9 +458,50 @@ export const Interview: FC = () => {
 
           {/* Suggestions Sidebar */}
           <aside style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 25px 60px rgba(15,23,42,0.25)', display: 'flex', flexDirection: 'column', gap: '12px', minHeight: 0 }}>
+            {/* Title always visible */}
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>Follow-up Questions</h3>
+            
+            {/* AI Analyze Button */}
+            <button
+              onClick={handleRequestAnalysis}
+              disabled={!isConnected || context.interviewState !== 'RUNNING' || isAnalyzing}
+              style={{
+                padding: '10px 16px',
+                borderRadius: '12px',
+                border: 'none',
+                background: isAnalyzing 
+                  ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' 
+                  : context.interviewState === 'RUNNING' 
+                    ? 'linear-gradient(135deg, #8b5cf6, #a855f7)' 
+                    : '#e2e8f0',
+                color: context.interviewState === 'RUNNING' ? '#fff' : '#94a3b8',
+                fontWeight: 600,
+                fontSize: '14px',
+                cursor: context.interviewState === 'RUNNING' && !isAnalyzing ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.2s ease',
+                width: '100%'
+              }}
+            >
+              {isAnalyzing ? (
+                <>
+                  <span style={{ animation: 'spin 1s linear infinite' }}>⏳</span>
+                  Analyzing...
+                </>
+              ) : (
+                <>
+                  🤖 Generate Questions
+                </>
+              )}
+            </button>
+            
+            {/* Questions List */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', minHeight: 0 }}>
               {context.suggestedQuestions.length === 0 ? (
-                <p style={{ margin: 0, color: '#0f172a', fontSize: '16px', fontWeight: 700 }}>Follow-up questions</p>
+                <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>Click the button above to generate questions</p>
               ) : (
                 context.suggestedQuestions.map((q) => (
                   <SuggestedQuestionItem key={q.id} question={q} />

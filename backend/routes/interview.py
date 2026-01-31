@@ -205,68 +205,96 @@ async def websocket_endpoint(websocket: WebSocket):
                         "timestamp": timestamp
                     }
                 })
+                
+                # ===== AUTO ANALYSIS (Background) =====
+                try:
+                    analyzer = RealtimeAnalyzer()
+                    
+                    if speaker == "hr":
+                        # Auto classify HR question and cache
+                        classification = await analyzer.classify_question(text)
+                        logger.info(f"🎯 [Auto] HR Question Classified: {classification.get('question_type')}")
+                        
+                        async with state_lock:
+                            if session_id in interview_sessions:
+                                interview_sessions[session_id]["last_hr_question"] = text
+                                interview_sessions[session_id]["last_classification"] = classification
+                    
+                    elif speaker == "candidate":
+                        # Get last HR question from cache
+                        last_hr_question = None
+                        async with state_lock:
+                            if session_id in interview_sessions:
+                                last_hr_question = interview_sessions[session_id].get("last_hr_question")
+                        
+                        if last_hr_question:
+                            # Auto analyze answer and cache
+                            analysis = await analyzer.analyze_answer(last_hr_question, text, "star")
+                            logger.info(f"📊 [Auto] Answer analyzed, score: {analysis.get('quality_score')}")
+                            
+                            async with state_lock:
+                                if session_id in interview_sessions:
+                                    interview_sessions[session_id]["last_candidate_answer"] = text
+                                    interview_sessions[session_id]["last_analysis"] = analysis
+                
+                except Exception as e:
+                    logger.error(f"❌ Auto analysis error: {e}")
             
             # ===== MANUAL AI ANALYSIS REQUEST =====
             elif message_type == "request_analysis":
                 if not session_id:
                     continue
                 
-                logger.info("🤖 Manual AI analysis requested")
+                logger.info("🤖 Manual AI analysis requested - using cached results")
                 
                 try:
-                    analyzer = RealtimeAnalyzer()
-                    
-                    # Get all transcripts from session
-                    transcripts = []
+                    # Get cached results
                     last_hr_question = None
                     last_candidate_answer = None
+                    last_classification = None
+                    last_analysis = None
                     
                     async with state_lock:
                         if session_id in interview_sessions:
-                            transcripts = interview_sessions[session_id].get("transcripts", [])
+                            session = interview_sessions[session_id]
+                            last_hr_question = session.get("last_hr_question")
+                            last_candidate_answer = session.get("last_candidate_answer")
+                            last_classification = session.get("last_classification")
+                            last_analysis = session.get("last_analysis")
                     
-                    # Find the last HR question and candidate answer
-                    for t in reversed(transcripts):
-                        if t["speaker"] == "candidate" and not last_candidate_answer:
-                            last_candidate_answer = t["text"]
-                        elif t["speaker"] == "hr" and not last_hr_question:
-                            last_hr_question = t["text"]
-                        if last_hr_question and last_candidate_answer:
-                            break
-                    
-                    if last_hr_question:
-                        # Classify the HR question
-                        classification = await analyzer.classify_question(last_hr_question)
-                        logger.info(f"🎯 HR Question Classified: {classification.get('question_type')}")
-                        
-                        # Send only to the requesting client
+                    # Send cached classification if exists
+                    if last_classification:
                         await websocket.send_json({
                             "type": "hr_question_classified",
                             "session_id": session_id,
-                            "classification": classification
+                            "classification": last_classification
                         })
+                        logger.info(f"🎯 Sent cached classification: {last_classification.get('question_type')}")
                     
-                    if last_hr_question and last_candidate_answer:
-                        # Analyze candidate's answer
-                        analysis = await analyzer.analyze_answer(last_hr_question, last_candidate_answer, "star")
-                        logger.info(f"📊 Answer analyzed, score: {analysis.get('quality_score')}")
-                        
-                        # Store weak points
-                        weak_points = analysis.get("weak_points", [])
+                    # Send cached weak points if exists
+                    if last_analysis:
+                        weak_points = last_analysis.get("weak_points", [])
                         if weak_points:
                             async with state_lock:
                                 if session_id in interview_sessions:
                                     interview_sessions[session_id]["weak_points"].extend(weak_points)
                             
-                            # Send only to the requesting client
                             await websocket.send_json({
                                 "type": "weak_points_updated",
                                 "session_id": session_id,
                                 "weak_points": weak_points
                             })
+                            logger.info(f"📊 Sent cached analysis, score: {last_analysis.get('quality_score')}")
+                    
+                    # Generate follow-up questions (only OpenAI call needed)
+                    if last_hr_question and last_candidate_answer:
+                        analyzer = RealtimeAnalyzer()
+                        weak_area = "the answer"
+                        if last_analysis:
+                            weak_points = last_analysis.get("weak_points", [])
+                            if weak_points:
+                                weak_area = weak_points[0].get("component", "the topic")
                         
-                        # Generate follow-up questions
-                        weak_area = weak_points[0].get("component", "the topic") if weak_points else "the answer"
                         followups = await analyzer.generate_followup_questions(
                             f"Q: {last_hr_question}\nA: {last_candidate_answer}",
                             weak_area,
@@ -274,11 +302,16 @@ async def websocket_endpoint(websocket: WebSocket):
                         )
                         logger.info(f"💡 Generated {len(followups)} follow-up questions")
                         
-                        # Send only to the requesting client
                         await websocket.send_json({
                             "type": "suggested_questions",
                             "session_id": session_id,
                             "questions": followups
+                        })
+                    else:
+                        logger.warning("⚠️ No HR question or candidate answer to analyze")
+                        await websocket.send_json({
+                            "type": "analysis_error",
+                            "message": "No conversation to analyze yet"
                         })
                     
                     # Send analysis complete notification
