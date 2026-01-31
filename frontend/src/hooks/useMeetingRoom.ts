@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 
 export interface UseMeetingRoomReturn {
   screenStream: MediaStream | null
@@ -10,57 +10,101 @@ export interface UseMeetingRoomReturn {
 }
 
 /**
- * Hook for managing screen sharing (Meeting Room)
+ * Hook for managing screen sharing (Meeting Room).
+ * Refactored to use Refs for hardware control to avoid stale closures 
+ * and infinite re-render loops.
  */
 export const useMeetingRoom = (): UseMeetingRoomReturn => {
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null)
   const [isSharing, setIsSharing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Use a Ref to keep track of the stream for the 'physical' stop logic
+  // This allows stopMeetingRoom to be a stable function with 0 dependencies
+  const streamRef = useRef<MediaStream | null>(null)
+
+  /**
+   * Physically stops all tracks in the current stream.
+   */
+  const stopMeetingRoom = useCallback(() => {
+    if (streamRef.current) {
+      console.log('Stopping all media tracks...')
+      streamRef.current.getTracks().forEach((track) => {
+        track.stop()
+        track.enabled = false
+      })
+      streamRef.current = null
+    }
+    setScreenStream(null)
+    setIsSharing(false)
+  }, []) // Zero dependencies = Never changes
+
+  /**
+   * Opens the browser screen picker.
+   */
   const selectMeetingRoom = useCallback(async (): Promise<void> => {
     try {
-      console.log('Starting screen share selection...')
+      console.log('Requesting screen capture...')
       setError(null)
 
-      // Use getDisplayMedia to show browser's built-in screen picker
       const stream = await navigator.mediaDevices.getDisplayMedia({
         video: {
           width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        } as any,
-        audio: true // Also capture audio from the meeting room
+          height: { ideal: 1080 },
+          frameRate: { ideal: 30 }
+        },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true
+        }
       })
 
-      console.log('✅ Screen share started successfully')
+      streamRef.current = stream
       setScreenStream(stream)
       setIsSharing(true)
 
-      // Listen for stream end
-      stream.getVideoTracks()[0].addEventListener('ended', () => {
-        console.log('Screen sharing ended')
+      // Listen for the "Stop Sharing" button in the browser UI
+      stream.getVideoTracks()[0].onended = () => {
+        console.log('Screen sharing ended by browser UI')
         stopMeetingRoom()
-      })
+      }
+
+      console.log('✅ Screen capture active')
     } catch (err: any) {
-      const errorMsg = err.message || 'Failed to select meeting room'
-      console.error('Error selecting meeting room:', err)
-      setError(errorMsg)
+      if (err.name === 'NotAllowedError') {
+        setError('Permission denied. Please allow screen sharing.')
+      } else {
+        setError(err.message || 'Failed to capture screen')
+      }
+      console.error('Screen capture error:', err)
       throw err
     }
-  }, [])
+  }, [stopMeetingRoom])
 
-  const stopMeetingRoom = useCallback(() => {
-    if (screenStream) {
-      screenStream.getTracks().forEach((track) => track.stop())
-      setScreenStream(null)
-    }
-    setIsSharing(false)
-    console.log('Meeting room sharing stopped')
-  }, [screenStream])
-
+  /**
+   * Properly restarts the meeting room capture.
+   * Includes a small delay to ensure hardware is released.
+   */
   const reselectMeetingRoom = useCallback(async () => {
+    console.log('Restarting meeting room selection...')
     stopMeetingRoom()
+    
+    // Give the browser 150ms to release the previous stream hardware
+    await new Promise(resolve => setTimeout(resolve, 150))
+    
     await selectMeetingRoom()
   }, [selectMeetingRoom, stopMeetingRoom])
+
+  /**
+   * Cleanup: Ensure tracks are stopped if the component is unmounted
+   */
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop())
+      }
+    }
+  }, [])
 
   return {
     screenStream,

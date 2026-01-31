@@ -1,6 +1,5 @@
-import React, { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { authAPI } from '../services/api'
 
 const modeOptions = [
   { value: 'mode1', label: 'Mode 1 · Guided', description: 'Structured script with coaching hints.' },
@@ -10,14 +9,19 @@ const modeOptions = [
 
 type ModeOption = (typeof modeOptions)[number]['value']
 
-export const Login: React.FC = () => {
+const generateToken = (username: string): string => {
+  const timestamp = Math.floor(Date.now() / 1000)
+  const payload = `${username}:${timestamp}`
+  return btoa(payload)
+}
+
+export const Login = () => {
   const navigate = useNavigate()
   const [candidateName, setCandidateName] = useState('')
   const [mode, setMode] = useState<ModeOption>('mode1')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleStartInterview = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const trimmedName = candidateName.trim()
     if (!trimmedName) {
@@ -26,22 +30,14 @@ export const Login: React.FC = () => {
     }
 
     setError('')
-    setLoading(true)
-
-    try {
-      const response = await authAPI.login(trimmedName, mode)
-      localStorage.setItem('token', response.access_token)
-      localStorage.setItem('candidate_name', response.candidate_name)
-      localStorage.setItem('interview_mode', response.mode)
-      localStorage.setItem('candidate_id', response.candidate_id)
-      localStorage.setItem('login_timestamp', response.recorded_at)
-      navigate('/interview')
-    } catch (err: any) {
-      const message = err?.response?.data?.detail || err?.message || 'Unable to record your name right now.'
-      setError(message)
-    } finally {
-      setLoading(false)
-    }
+    const timestamp = new Date().toISOString()
+    const token = generateToken(trimmedName)
+    localStorage.setItem('token', token)
+    localStorage.setItem('candidate_name', trimmedName)
+    localStorage.setItem('interview_mode', mode)
+    localStorage.setItem('candidate_id', `local_${timestamp}`)
+    localStorage.setItem('login_timestamp', timestamp)
+    navigate('/interview')
   }
 
   return (
@@ -75,7 +71,7 @@ export const Login: React.FC = () => {
           AI Interview Lab
         </h1>
         <p style={{ color: '#475569', fontSize: '14px', textAlign: 'center', marginBottom: '24px' }}>
-          Testing mode only—just tell us your name and pick a mode to start recording.
+          Simple testing flow: enter your name, pick a mode, and start the interview (no recording is stored).
         </p>
 
         {error && (
@@ -94,7 +90,7 @@ export const Login: React.FC = () => {
           </div>
         )}
 
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+        <form onSubmit={handleStartInterview} style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
           <div>
             <label style={{ display: 'block', fontWeight: '600', color: '#0f172a', marginBottom: '6px' }}>
               Your name
@@ -151,20 +147,19 @@ export const Login: React.FC = () => {
 
           <button
             type='submit'
-            disabled={loading}
             style={{
               width: '100%',
-              padding: '12px',
-              borderRadius: '10px',
-              backgroundColor: loading ? '#94a3b8' : '#2563eb',
+              padding: '14px',
+              borderRadius: '12px',
+              backgroundColor: '#2563eb',
               color: '#ffffff',
               fontWeight: '600',
               border: 'none',
-              fontSize: '16px',
-              cursor: loading ? 'not-allowed' : 'pointer'
+              fontSize: '17px',
+              cursor: 'pointer'
             }}
           >
-            {loading ? 'Recording...' : 'Record name & continue'}
+            Start Interview
           </button>
         </form>
       </div>

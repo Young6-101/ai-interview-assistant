@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type FC, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useInterview } from '../contexts/InterviewContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useMeetingRoom } from '../hooks/useMeetingRoom'
-import { useAudioCapture } from '../hooks/useAudioCapture'
+import { useAudioCapture, type AudioBlock } from '../hooks/useAudioCapture'
 import '../App.css'
 
 const MODE_LABELS: Record<string, string> = {
@@ -12,210 +12,227 @@ const MODE_LABELS: Record<string, string> = {
   mode3: 'Mode 3 · Expert'
 }
 
-interface InterviewSetup {
-  candidateName: string
-  position: string
-  duration: number
-}
-
-export const Interview: React.FC = () => {
+export const Interview: FC = () => {
   const navigate = useNavigate()
   const context = useInterview()
-  const { isConnected, startInterview, pauseInterview, stopInterview, sendTranscript, disconnect } = useWebSocket()
+  
+  /**
+   * 1. Initialize custom hooks.
+   * Make sure useWebSocket is the refactored version that provides 'connect'.
+   */
+  const { isConnected, connect, startInterview, stopInterview, sendTranscript, disconnect } = useWebSocket()
   const { screenStream, isSharing, selectMeetingRoom, stopMeetingRoom, error: meetingRoomError } = useMeetingRoom()
+
+  /**
+   * 2. Stable Context Reference.
+   * We use a Ref to store the context object so that handleTranscript can access 
+   * state/methods without needing to depend on the context itself. 
+   * This prevents infinite re-render loops.
+   */
+  const contextRef = useRef(context)
+  useEffect(() => {
+    contextRef.current = context
+  }, [context])
+
+  /**
+   * 3. Stable Transcript Handler.
+   * This function is passed to useAudioCapture. It must remain stable (same reference) 
+   * so the microphone doesn't stop/start every time the component re-renders.
+   */
   const handleTranscript = useCallback(
-    (block) => {
+    (block: AudioBlock) => {
       const speakerLabel = block.speaker === 'HR' ? 'HR' : 'CANDIDATE'
-      context.addTranscript({
+      
+      // Update UI state via Context Ref
+      contextRef.current.addTranscript({
         id: block.id,
         speaker: speakerLabel,
         text: block.transcript,
         timestamp: block.timestamp,
         isFinal: true
       })
+      
+      // Forward the text to the backend via WebSocket
       sendTranscript(speakerLabel, block.transcript, block.timestamp)
     },
-    [context, sendTranscript]
+    [sendTranscript] // Only depends on sendTranscript, which is stable
   )
-  const { startHrRecording, stopHrRecording, startCandidateRecording, stopCandidateRecording, setAssemblyAIToken } = useAudioCapture(handleTranscript)
 
-  const storedCandidateName = localStorage.getItem('candidate_name') ?? ''
-  const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
-  const [setup, setSetup] = useState<InterviewSetup>({
-    candidateName: storedCandidateName,
-    position: 'Software Engineer',
-    duration: 60
-  })
-  const modeLabel = MODE_LABELS[storedMode] || storedMode
-  const [setupComplete, setSetupComplete] = useState(false)
+  /**
+   * 4. Initialize Audio Capture logic.
+   */
+  const { 
+    startHrRecording, 
+    stopHrRecording, 
+    startCandidateRecording, 
+    stopCandidateRecording, 
+    setAssemblyAIToken 
+  } = useAudioCapture(handleTranscript)
+
+  // 5. Local UI States
   const [error, setError] = useState('')
-  const assemblyToken = import.meta.env.VITE_ASSEMBLYAI_API_KEY ?? import.meta.env.VITE_ASSEMBLY_API_KEY ?? ''
+  const [hrMicOn, setHrMicOn] = useState(false)
+  const [candidateMicOn, setCandidateMicOn] = useState(false)
+  const [isSelecting, setIsSelecting] = useState(false)
+  
+  const assemblyToken = import.meta.env.VITE_ASSEMBLY_API_KEY ?? ''
+  const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
+  const candidateName = localStorage.getItem('candidate_name') ?? 'Candidate'
+  const modeLabel = MODE_LABELS[storedMode] || storedMode
 
-  // Check authentication
+  // ============ LIFECYCLE EFFECTS ============
+
+  /**
+   * A. Establish WebSocket Connection.
+   * Connect only once when the component mounts. 
+   * Clean up (disconnect) when leaving the page.
+   */
   useEffect(() => {
-    const registeredName = localStorage.getItem('candidate_name')
-    if (!registeredName) {
+    console.log('Interview component mounted - Triggering WebSocket connection')
+    connect()
+    return () => {
+        // Only disconnect if the component is actually unmounting
+        disconnect()
+    }
+  }, [connect, disconnect])
+
+  /**
+   * B. Auth Guard.
+   * Redirect to login if user session is missing.
+   */
+  useEffect(() => {
+    if (!localStorage.getItem('candidate_name')) {
       navigate('/login')
     }
   }, [navigate])
 
+  /**
+   * C. AssemblyAI Configuration.
+   * Set the API token for the audio processing hook.
+   */
   useEffect(() => {
     if (assemblyToken) {
       setAssemblyAIToken(assemblyToken)
-      setError('')
-    } else if (setupComplete) {
-      setError('AssemblyAI API key is missing. Please set VITE_ASSEMBLYAI_API_KEY.')
+      if (error === 'Missing API Key') setError('')
+    } else {
+      setError('Missing API Key')
     }
-  }, [assemblyToken, setAssemblyAIToken, setupComplete])
+  }, [assemblyToken, setAssemblyAIToken])
 
-  const handleStartSetup = () => {
-    if (!setup.candidateName.trim()) {
-      setError('Please enter candidate name')
-      return
-    }
-    setError('')
-    setSetupComplete(true)
-  }
-
+  /**
+   * D. Candidate Recording Sync.
+   * Automatically starts the candidate's mic capture when a screen stream is shared.
+   */
   useEffect(() => {
     if (!screenStream) {
       stopCandidateRecording()
+      setCandidateMicOn(false)
       return
     }
 
-    startCandidateRecording(screenStream).catch((err) => {
-      console.error('Candidate audio capture failed', err)
-      setError('Candidate audio capture failed: ' + (err?.message ?? 'Unknown error'))
-    })
+    startCandidateRecording(screenStream)
+      .then(() => setCandidateMicOn(true))
+      .catch((err) => {
+        console.error('Candidate capture failed:', err)
+        setError('Candidate mic failed: ' + (err?.message ?? 'Unknown'))
+      })
 
     return () => {
       stopCandidateRecording()
+      setCandidateMicOn(false)
     }
   }, [screenStream, startCandidateRecording, stopCandidateRecording])
 
+  /**
+   * E. Manual Stream End Detection.
+   * Detects if the user clicks "Stop Sharing" on the browser's system bar.
+   */
+  useEffect(() => {
+    if (!screenStream) return
+    const videoTrack = screenStream.getVideoTracks()[0]
+    if (!videoTrack) return
+
+    const onEnded = () => {
+      console.log('Screen sharing ended via browser UI')
+      stopMeetingRoom()
+    }
+    videoTrack.addEventListener('ended', onEnded)
+    return () => videoTrack.removeEventListener('ended', onEnded)
+  }, [screenStream, stopMeetingRoom])
+
+  // ============ EVENT HANDLERS ============
+
+  /**
+   * Triggers the "start" message to the backend via WebSocket.
+   */
   const handleStartInterview = () => {
-    if (!isConnected) {
-      setError('WebSocket not connected. Please wait...')
-      return
-    }
-
-    if (!isSharing) {
-      setError('Please select meeting room first')
-      return
-    }
-
-    if (!hrMicOn || !candidateMicOn) {
-      setError('Please start both HR and Candidate mics before starting the interview')
-      return
-    }
+    if (!isConnected) return setError('Waiting for WebSocket connection...')
+    if (!isSharing) return setError('Please select a meeting room first')
+    if (!hrMicOn || !candidateMicOn) return setError('Ensure both HR and Candidate mics are active')
 
     if (startInterview()) {
       context.setInterviewState('RUNNING')
       setError('')
-    } else {
-      setError('Failed to start interview')
     }
   }
 
-  const handlePauseInterview = () => {
-    if (pauseInterview()) {
-      context.setInterviewState('PAUSED')
-    }
-  }
-
+  /**
+   * Opens the browser's screen picker UI.
+   */
   const handleSelectMeetingRoom = async () => {
     setIsSelecting(true)
     setError('')
     try {
       await selectMeetingRoom()
     } catch (err: any) {
-      console.error('Select meeting room failed', err)
-      setError(err?.message || 'Failed to select meeting room')
+      setError(err?.message || 'Failed to select room')
     } finally {
       setIsSelecting(false)
     }
   }
 
   const handleStartHrMic = async () => {
-    setError('')
     try {
       await startHrRecording()
       setHrMicOn(true)
     } catch (err: any) {
-      console.error('Failed to start HR mic', err)
-      setError(err?.message || 'Failed to start HR mic')
+      setError(err?.message || 'HR mic failed')
     }
   }
 
   const handleStopHrMic = () => {
-    try {
-      stopHrRecording()
-    } catch (err) {
-      console.error('Failed to stop HR mic', err)
-    }
+    stopHrRecording()
     setHrMicOn(false)
   }
 
-  const handleStartCandidateMic = async () => {
-    setError('')
-    if (!screenStream) {
-      setError('Please select meeting room (screen) first')
-      return
-    }
-    try {
-      await startCandidateRecording(screenStream)
-      setCandidateMicOn(true)
-    } catch (err: any) {
-      console.error('Failed to start candidate mic', err)
-      setError(err?.message || 'Failed to start candidate mic')
-    }
-  }
-
-  const handleStopCandidateMic = () => {
-    try {
-      stopCandidateRecording()
-    } catch (err) {
-      console.error('Failed to stop candidate mic', err)
-    }
-    setCandidateMicOn(false)
-  }
-
+  /**
+   * Handles re-selection of the meeting room.
+   * It explicitly stops existing tracks before requesting a new one 
+   * to prevent hardware/permission conflicts.
+   */
   const handleReselectMeetingRoom = async () => {
+    setError('')
     try {
-      stopMeetingRoom()
-      await handleSelectMeetingRoom()
+        // 1. Explicitly stop current tracks to free up the hardware
+        if (screenStream) {
+            screenStream.getTracks().forEach(track => track.stop())
+        }
+        
+        // 2. Reset states and stop internal audio logic
+        stopCandidateRecording()
+        setCandidateMicOn(false)
+        stopMeetingRoom() // Resets the context stream to null
+        
+        // 3. Small delay to allow the browser to process the hardware release
+        await new Promise(resolve => setTimeout(resolve, 150))
+        
+        // 4. Trigger the selection dialog again
+        await handleSelectMeetingRoom()
     } catch (err: any) {
-      console.error('Reselect meeting room failed', err)
-      setError(err?.message || 'Failed to reselect meeting room')
+        console.error('Reselect failed:', err)
+        setError(err?.message || 'Failed to reselect meeting room')
     }
   }
-
-  // If the screen stream's video track ends, ensure UI/cleanup runs
-  useEffect(() => {
-    if (!screenStream) return
-    const videoTrack = screenStream.getVideoTracks()[0]
-    if (!videoTrack) return
-    const onEnded = () => {
-      console.log('Screen sharing ended (detected in Interview.tsx)')
-      stopMeetingRoom()
-    }
-    videoTrack.addEventListener('ended', onEnded)
-    return () => {
-      try {
-        videoTrack.removeEventListener('ended', onEnded)
-      } catch (_err) {}
-    }
-  }, [screenStream, stopMeetingRoom])
-
-  // If sharing stops, ensure candidate mic is stopped
-  useEffect(() => {
-    if (!isSharing && candidateMicOn) {
-      try {
-        stopCandidateRecording()
-      } catch (err) {}
-      setCandidateMicOn(false)
-    }
-  }, [isSharing, candidateMicOn, stopCandidateRecording])
 
   const handleStopInterview = () => {
     if (stopInterview()) {
@@ -227,464 +244,168 @@ export const Interview: React.FC = () => {
   }
 
   const handleLogout = () => {
-    stopHrRecording()
-    stopCandidateRecording()
-    stopMeetingRoom()
     disconnect()
-    localStorage.removeItem('token')
-    localStorage.removeItem('candidate_name')
-    localStorage.removeItem('interview_mode')
-    localStorage.removeItem('candidate_id')
-    localStorage.removeItem('login_timestamp')
+    localStorage.clear()
     navigate('/login')
   }
 
-  // Setup Phase
-  if (!setupComplete) {
-    return (
-      <div style={{ padding: '40px', maxWidth: '500px', margin: '0 auto', marginTop: '100px' }}>
-        <h1>Interview Setup</h1>
-        
+  const canStartInterview = isSharing && hrMicOn
+
+  // ============ RENDER (JSX) ============
+  return (
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0f172a, #1f2a44)', color: '#0f172a' }}>
+      <div style={{ maxWidth: '1400px', margin: '0 auto', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '32px 0' }}>
+        <header style={{ padding: '0 32px 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <p style={{ margin: 0, letterSpacing: '0.3em', textTransform: 'uppercase', fontSize: '12px', color: '#94a3b8' }}>Live interview</p>
+              <h1 style={{ margin: '6px 0 0', fontSize: '36px', color: '#f8fafc' }}>{candidateName}</h1>
+              <p style={{ margin: '4px 0 0', fontSize: '16px', color: '#cbd5f5' }}>Mode: {modeLabel}</p>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                <span style={{ fontSize: '14px', color: '#e2e8f0' }}>Status:</span>
+                <span style={{ width: '10px', height: '10px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171', display: 'inline-block' }} />
+                <span style={{ color: '#e2e8f0', fontSize: '14px' }}>{isConnected ? 'Connected' : 'Connecting...'}</span>
+              </div>
+              <button
+                onClick={handleLogout}
+                style={{ padding: '8px 18px', borderRadius: '999px', border: '1px solid rgba(248,250,252,0.5)', background: 'rgba(248,250,252,0.15)', color: '#f8fafc', cursor: 'pointer' }}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </header>
+
         {error && (
-          <div style={{ color: '#dc2626', marginBottom: '16px', padding: '12px', backgroundColor: '#fee2e2', borderRadius: '4px' }}>
+          <div style={{ margin: '0 32px 20px', padding: '12px 16px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
             {error}
           </div>
         )}
 
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-            Candidate Name
-          </label>
-          <input
-            type="text"
-            value={setup.candidateName}
-            onChange={(e) => setSetup({ ...setup, candidateName: e.target.value })}
-            placeholder="Enter candidate name"
-            style={{
-              width: '100%',
-              padding: '10px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              fontSize: '14px',
-              boxSizing: 'border-box'
-            }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-            Position
-          </label>
-          <input
-            type="text"
-            value={setup.position}
-            onChange={(e) => setSetup({ ...setup, position: e.target.value })}
-            style={{
-              width: '100%',
-              padding: '10px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              fontSize: '14px',
-              boxSizing: 'border-box'
-            }}
-          />
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>
-            Duration (minutes)
-          </label>
-          <input
-            type="number"
-            value={setup.duration}
-            onChange={(e) => setSetup({ ...setup, duration: parseInt(e.target.value) })}
-            min="15"
-            max="120"
-            style={{
-              width: '100%',
-              padding: '10px',
-              border: '1px solid #d1d5db',
-              borderRadius: '4px',
-              fontSize: '14px',
-              boxSizing: 'border-box'
-            }}
-          />
-        </div>
-
-        <button
-          onClick={handleStartSetup}
-          style={{
-            width: '100%',
-            padding: '12px',
-            backgroundColor: '#3b82f6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '16px',
-            fontWeight: '600',
-            cursor: 'pointer'
-          }}
-        >
-          Continue to Interview
-        </button>
-
-        <button
-          onClick={handleLogout}
-          style={{
-            width: '100%',
-            marginTop: '12px',
-            padding: '12px',
-            backgroundColor: '#e5e7eb',
-            color: '#374151',
-            border: 'none',
-            borderRadius: '4px',
-            fontSize: '16px',
-            cursor: 'pointer'
-          }}
-        >
-          Logout
-        </button>
-      </div>
-    )
-  }
-
-  // Interview Phase
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: '#f3f4f6' }}>
-      {/* Header */}
-      <div style={{ padding: '16px', backgroundColor: 'white', borderBottom: '1px solid #e5e7eb' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h2 style={{ margin: '0 0 4px 0' }}>Interview: {setup.candidateName}</h2>
-            <p style={{ margin: '0', fontSize: '14px', color: '#6b7280', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-              <span>Position: {setup.position}</span>
-              <span style={{ color: '#0f172a', fontWeight: '600' }}>• Mode: {modeLabel}</span>
-              <span style={{ color: isConnected ? '#10b981' : '#ef4444' }}>
-                {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
-              </span>
-            </p>
-          </div>
-          <button
-            onClick={handleLogout}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: '#e5e7eb',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px'
-            }}
-          >
-            Logout
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div style={{ display: 'flex', flex: 1, overflow: 'hidden', gap: '0' }}>
-        {/* Left Panel - Meeting Room & Transcript */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', borderRight: '1px solid #e5e7eb', backgroundColor: 'white' }}>
-          
-          {/* Top: Meeting Room */}
-          <div id="meetingRoomContainer" style={{ flex: 0.5, display: 'flex', flexDirection: 'column', borderBottom: '1px solid #e5e7eb' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: '0', fontSize: '14px', fontWeight: '600' }}>Meeting Room</h3>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                <button
-                  onClick={hrMicOn ? handleStopHrMic : handleStartHrMic}
-                  style={{ padding: '6px 10px', fontSize: '12px', backgroundColor: hrMicOn ? '#ef4444' : '#10b981', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  {hrMicOn ? 'Stop HR Mic' : 'Start HR Mic'}
-                </button>
-                <button
-                  onClick={candidateMicOn ? handleStopCandidateMic : handleStartCandidateMic}
-                  disabled={!isSharing && !screenStream}
-                  style={{ padding: '6px 10px', fontSize: '12px', backgroundColor: candidateMicOn ? '#ef4444' : '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: candidateMicOn ? 'pointer' : 'pointer', opacity: (!isSharing && !screenStream) ? 0.6 : 1 }}
-                >
-                  {candidateMicOn ? 'Stop Candidate Mic' : 'Start Candidate Mic'}
-                </button>
+        <main style={{ flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: '24px', padding: '0 32px 32px' }}>
+          <section style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '26px', boxShadow: '0 25px 60px rgba(15,23,42,0.45)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#94a3b8' }}>Meeting Room</p>
+                  <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#475569' }}>
+                    {isSharing ? 'Screen sharing in progress' : 'Select a meeting room to get started'}
+                  </p>
+                </div>
+                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button
+                    onClick={hrMicOn ? handleStopHrMic : handleStartHrMic}
+                    style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: hrMicOn ? '#dc2626' : '#10b981', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {hrMicOn ? 'Stop HR Mic' : 'Start HR Mic'}
+                  </button>
+                  {context.interviewState === 'NOT_STARTED' && (
+                    <button
+                      onClick={handleStartInterview}
+                      disabled={!canStartInterview}
+                      style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: canStartInterview ? '#2563eb' : '#cbd5f5', color: '#fff', fontWeight: 600, cursor: canStartInterview ? 'pointer' : 'not-allowed' }}
+                    >
+                      Start Interview
+                    </button>
+                  )}
+                  {context.interviewState === 'RUNNING' && (
+                    <button
+                      onClick={handleStopInterview}
+                      style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      End Interview
+                    </button>
+                  )}
+                </div>
+              </div>
+              
+              <div style={{ borderRadius: '18px', overflow: 'hidden', position: 'relative', minHeight: '240px', backgroundColor: '#0f172a' }}>
+                {isSharing && screenStream ? (
+                  <div style={{ width: '100%', height: '100%' }}>
+                    <video
+                      className='meeting-room-video'
+                      ref={(el) => { if (el && el.srcObject !== screenStream) el.srcObject = screenStream }}
+                      autoPlay
+                      muted
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                    <div style={{ position: 'absolute', top: '12px', left: '12px', padding: '6px 10px', borderRadius: '999px', backgroundColor: 'rgba(15,23,42,0.8)', color: '#f8fafc', fontSize: '12px', fontWeight: 600 }}>
+                      SHARING
+                    </div>
+                    <div style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', gap: '8px' }}>
+                      <button
+                        onClick={stopMeetingRoom}
+                        style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Stop
+                      </button>
+                      <button
+                        onClick={handleReselectMeetingRoom}
+                        style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Reselect
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '32px', textAlign: 'center', color: '#f8fafc' }}>
+                    <p style={{ marginBottom: '16px', fontSize: '18px' }}>Ready when you are</p>
+                    <button
+                      onClick={handleSelectMeetingRoom}
+                      disabled={isSelecting}
+                      style={{ padding: '12px 20px', borderRadius: '12px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontWeight: 600, cursor: isSelecting ? 'not-allowed' : 'pointer' }}
+                    >
+                      {isSelecting ? 'Selecting...' : 'Choose meeting room'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
-            <div style={{ flex: 1, backgroundColor: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', position: 'relative', overflow: 'hidden' }}>
-              {isSharing && screenStream ? (
-                <div style={{ width: '100%', height: '100%', position: 'relative' }}>
-                  <video
-                    className="meeting-room-video"
-                    ref={(el) => {
-                      if (el && el.srcObject !== screenStream) {
-                        el.srcObject = screenStream
-                      }
-                    }}
-                    autoPlay
-                    muted
-                    style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-                  />
-
-                  <div className="meeting-room-status connected" style={{ position: 'absolute', top: '12px', left: '12px', fontSize: '12px', fontWeight: 600, padding: '6px 8px' }}>
-                    SHARING
-                  </div>
-
-                  <div className="meeting-room-controls" style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', gap: '8px' }}>
-                    <button
-                      className="room-control-btn"
-                      onClick={stopMeetingRoom}
-                      style={{ padding: '8px 12px', backgroundColor: '#ef4444', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    >
-                      Stop
-                    </button>
-                    <button
-                      className="room-control-btn"
-                      onClick={handleReselectMeetingRoom}
-                      style={{ padding: '8px 12px', backgroundColor: '#3b82f6', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                    >
-                      Reselect
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="meeting-room-setup" id="meetingRoomSetup" style={{ textAlign: 'center', color: '#fff' }}>
-                  <div className="meeting-room-title" style={{ marginBottom: '12px' }}>
-                    Select Your Meeting Room
-                  </div>
-                  <button
-                    className="select-room-btn"
-                    id="selectRoomBtn"
-                    onClick={handleSelectMeetingRoom}
-                    disabled={isSelecting}
-                    style={{
-                      padding: '12px 18px',
-                      backgroundColor: '#3b82f6',
-                      color: 'white',
-                      border: 'none',
-                      borderRadius: '6px',
-                      cursor: isSelecting ? 'not-allowed' : 'pointer'
-                    }}
-                  >
-                    {isSelecting ? 'Selecting...' : 'Select'}
-                  </button>
-                </div>
-              )}
-
-              {meetingRoomError && (
-                <div style={{ position: 'absolute', top: '20px', left: '20px', backgroundColor: '#fee2e2', color: '#dc2626', padding: '8px 12px', borderRadius: '4px', fontSize: '12px' }}>
-                  {meetingRoomError}
-                </div>
-              )}
+            
+            {/* Transcript Area */}
+            <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '22px', boxShadow: '0 25px 60px rgba(15,23,42,0.2)' }}>
+              <div style={{ marginBottom: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Transcript</h3>
+                <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#6b7280' }}>Live captions streamed from AssemblyAI</p>
+              </div>
+              <div style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {context.transcripts.length === 0 ? (
+                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px' }}>Waiting for first transcript...</p>
+                ) : (
+                  context.transcripts.map((t) => (
+                    <div key={t.id} style={{ padding: '12px', borderRadius: '12px', backgroundColor: t.speaker === 'HR' ? '#eff6ff' : '#f0fdf4', borderLeft: `3px solid ${t.speaker === 'HR' ? '#3b82f6' : '#10b981'}` }}>
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: t.speaker === 'HR' ? '#1d4ed8' : '#047857' }}>[{t.speaker}]</span>
+                      <p style={{ margin: '6px 0 4px', fontSize: '13px' }}>{t.text}</p>
+                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>{new Date(t.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          </div>
+          </section>
 
-          {/* Bottom: Transcript */}
-          <div style={{ flex: 0.5, display: 'flex', flexDirection: 'column', borderTop: '1px solid #e5e7eb' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
-              <h3 style={{ margin: '0', fontSize: '14px', fontWeight: '600' }}>Transcript</h3>
+          {/* Suggestions Sidebar */}
+          <aside style={{ backgroundColor: 'white', borderRadius: '28px', padding: '24px', boxShadow: '0 25px 60px rgba(15,23,42,0.25)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#94a3b8' }}>Coaching cue</p>
+              <h3 style={{ margin: '6px 0 0', fontSize: '18px', color: '#0f172a' }}>Follow-up questions</h3>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-              {context.transcripts.length === 0 ? (
-                <p style={{ color: '#9ca3af', fontSize: '13px', margin: '0' }}>Waiting for transcripts...</p>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+              {context.suggestedQuestions.length === 0 ? (
+                <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px' }}>Generating follow-up suggestions...</p>
               ) : (
-                context.transcripts.map((t) => (
-                  <div
-                    key={t.id}
-                    style={{
-                      marginBottom: '8px',
-                      padding: '8px',
-                      backgroundColor: t.speaker === 'HR' ? '#eff6ff' : '#f0fdf4',
-                      borderRadius: '4px',
-                      borderLeft: `3px solid ${t.speaker === 'HR' ? '#3b82f6' : '#10b981'}`
-                    }}
-                  >
-                    <span style={{ fontWeight: '600', fontSize: '11px', color: t.speaker === 'HR' ? '#1e40af' : '#166534' }}>
-                      [{t.speaker}]
-                    </span>
-                    <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>{t.text}</p>
-                    <span style={{ fontSize: '11px', color: '#9ca3af' }}>
-                      {new Date(t.timestamp).toLocaleTimeString()}
-                    </span>
+                context.suggestedQuestions.map((q) => (
+                  <div key={q.id} style={{ padding: '14px', borderRadius: '16px', border: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>{q.skill}</p>
+                    <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>{q.text}</p>
                   </div>
                 ))
               )}
             </div>
-          </div>
-        </div>
-
-        {/* Right Panel - Analysis Area (Weak Points & Questions) */}
-        <div style={{ width: '350px', display: 'flex', flexDirection: 'column', backgroundColor: 'white' }}>
-          {/* Tabs Navigation */}
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
-            <h3 style={{ margin: '0', fontSize: '14px', fontWeight: '600' }}>AI Analysis</h3>
-          </div>
-
-          {/* Analysis Content */}
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflowY: 'hidden' }}>
-            
-            {/* Weak Points Section */}
-            <div style={{ flex: 0.5, display: 'flex', flexDirection: 'column', borderBottom: '1px solid #e5e7eb' }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#fafafa' }}>
-                <h4 style={{ margin: '0', fontSize: '13px', fontWeight: '600', color: '#991b1b' }}>🚨 Weak Points</h4>
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                {context.weakPoints.length === 0 ? (
-                  <p style={{ color: '#9ca3af', fontSize: '12px', margin: '0' }}>Analyzing...</p>
-                ) : (
-                  context.weakPoints.map((wp) => (
-                    <div
-                      key={wp.id}
-                      style={{
-                        marginBottom: '10px',
-                        padding: '10px',
-                        backgroundColor: '#fef2f2',
-                        borderRadius: '4px',
-                        borderLeft: '3px solid #ef4444'
-                      }}
-                    >
-                      <span style={{ fontWeight: '600', fontSize: '11px', color: '#991b1b' }}>
-                        {wp.category}
-                      </span>
-                      <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>{wp.description}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Suggested Questions Section */}
-            <div style={{ flex: 0.5, display: 'flex', flexDirection: 'column' }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid #e5e7eb', backgroundColor: '#fafafa' }}>
-                <h4 style={{ margin: '0', fontSize: '13px', fontWeight: '600', color: '#92400e' }}>💡 Suggested Questions</h4>
-              </div>
-              <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
-                {context.suggestedQuestions.length === 0 ? (
-                  <p style={{ color: '#9ca3af', fontSize: '12px', margin: '0' }}>Generating questions...</p>
-                ) : (
-                  context.suggestedQuestions.map((q) => (
-                    <div
-                      key={q.id}
-                      style={{
-                        marginBottom: '10px',
-                        padding: '10px',
-                        backgroundColor: '#fef3c7',
-                        borderRadius: '4px',
-                        borderLeft: '3px solid #f59e0b'
-                      }}
-                    >
-                      <span style={{ fontWeight: '600', fontSize: '11px', color: '#92400e' }}>
-                        {q.skill}
-                      </span>
-                      <p style={{ margin: '4px 0 0 0', fontSize: '12px' }}>{q.text}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Footer - Controls */}
-      <div style={{ padding: '16px', backgroundColor: 'white', borderTop: '1px solid #e5e7eb' }}>
-        {error && (
-          <div style={{ color: '#dc2626', marginBottom: '12px', padding: '8px', backgroundColor: '#fee2e2', borderRadius: '4px', fontSize: '13px' }}>
-            {error}
-          </div>
-        )}
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-          {context.interviewState === 'NOT_STARTED' && (
-            <button
-              onClick={handleStartInterview}
-              disabled={!(isConnected && isSharing && hrMicOn && candidateMicOn)}
-              style={{
-                padding: '12px 24px',
-                backgroundColor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? '#10b981' : '#d1d5db',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                fontSize: '16px',
-                fontWeight: '600',
-                cursor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? 'pointer' : 'not-allowed'
-              }}
-            >
-              Start Interview
-            </button>
-          )}
-
-          {context.interviewState === 'RUNNING' && (
-            <>
-              <button
-                onClick={handlePauseInterview}
-                style={{
-                  padding: '12px 24px',
-                  backgroundColor: '#f59e0b',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Pause
-              </button>
-              <button
-                onClick={handleStopInterview}
-                style={{
-                  padding: '12px 24px',
-                  backgroundColor: '#ef4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                End Interview
-              </button>
-            </>
-          )}
-
-          {context.interviewState === 'PAUSED' && (
-            <>
-                <button
-                  onClick={handleStartInterview}
-                  disabled={!(isConnected && isSharing && hrMicOn && candidateMicOn)}
-                  style={{
-                    padding: '12px 24px',
-                    backgroundColor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? '#10b981' : '#d1d5db',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    fontSize: '16px',
-                    fontWeight: '600',
-                    cursor: (isConnected && isSharing && hrMicOn && candidateMicOn) ? 'pointer' : 'not-allowed'
-                  }}
-                >
-                  Resume
-                </button>
-              <button
-                onClick={handleStopInterview}
-                style={{
-                  padding: '12px 24px',
-                  backgroundColor: '#ef4444',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '4px',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                End Interview
-              </button>
-            </>
-          )}
-
-          {context.interviewState === 'ENDED' && (
-            <div style={{ textAlign: 'center', color: '#6b7280' }}>
-              <p style={{ margin: '0', fontSize: '16px', fontWeight: '600' }}>Interview Ended</p>
-              <p style={{ margin: '4px 0 0 0', fontSize: '14px' }}>Refresh page to start new interview</p>
-            </div>
-          )}
-        </div>
+          </aside>
+        </main>
       </div>
     </div>
   )

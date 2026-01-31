@@ -5,6 +5,7 @@ import json
 import time
 import logging
 from datetime import datetime
+from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from utils.auth import verify_token
@@ -19,7 +20,7 @@ router = APIRouter(tags=["interview"])
 
 class CreateInterviewRequest(BaseModel):
     candidate_name: str
-    candidate_email: str = None
+    candidate_email: Optional[str] = None
     mode: str = "mode1"
 
 class SaveInterviewRequest(BaseModel):
@@ -90,17 +91,36 @@ async def websocket_endpoint(websocket: WebSocket):
     """
     WebSocket endpoint for real-time interview
     """
-    await websocket.accept()
-    active_websockets.append(websocket)
+    try:
+        await websocket.accept()
+        active_websockets.append(websocket)
+        logger.info(f"✅ WebSocket accepted from {websocket.client}")
+    except Exception as e:
+        logger.error(f"❌ WebSocket accept failed: {e}")
+        raise
     
     session_id = None
+    is_paused = False
     
     try:
         while True:
-            data = await websocket.receive_json()
-            message_type = data.get("type")
+            try:
+                data = await websocket.receive_json()
+            except Exception as e:
+                # Connection closed or invalid JSON
+                logger.debug(f"WebSocket receive error (connection closed?): {type(e).__name__}")
+                break
             
+            message_type = data.get("type")
             logger.info(f"📨 Received: {message_type}")
+            
+            # ===== PING (Keep Alive) =====
+            if message_type == "ping":
+                try:
+                    await websocket.send_json({"type": "pong"})
+                except Exception:
+                    break
+                continue
             
             # ===== START INTERVIEW =====
             if message_type == "start":
@@ -110,10 +130,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Verify token
                 username = verify_token(token)
                 if not username:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "Invalid token"
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Invalid token"
+                        })
+                    except Exception as e:
+                        logger.debug(f"Failed to send error: {e}")
                     continue
                 
                 # Create session
@@ -130,19 +153,25 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 logger.info(f"✨ Interview started: {session_id} (mode: {mode})")
                 
-                await websocket.send_json({
-                    "type": "session_started",
-                    "session_id": session_id,
-                    "mode": mode
-                })
+                try:
+                    await websocket.send_json({
+                        "type": "session_started",
+                        "session_id": session_id,
+                        "mode": mode
+                    })
+                except Exception as e:
+                    logger.debug(f"Failed to send session_started: {e}")
             
             # ===== NEW TRANSCRIPT =====
             elif message_type == "transcript":
                 if not session_id:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": "No active session"
-                    })
+                    try:
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "No active session"
+                        })
+                    except Exception:
+                        pass
                     continue
                 
                 payload = data.get("payload", {})
@@ -195,6 +224,28 @@ async def websocket_endpoint(websocket: WebSocket):
                     "weak_points": weak_points
                 })
             
+            # ===== PAUSE INTERVIEW =====
+            elif message_type == "pause":
+                if session_id:
+                    is_paused = True
+                    logger.info(f"⏸️  Interview paused: {session_id}")
+                    await websocket.send_json({
+                        "type": "interview_paused",
+                        "session_id": session_id
+                    })
+                continue
+            
+            # ===== RESUME INTERVIEW =====
+            elif message_type == "resume":
+                if session_id:
+                    is_paused = False
+                    logger.info(f"▶️  Interview resumed: {session_id}")
+                    await websocket.send_json({
+                        "type": "interview_resumed",
+                        "session_id": session_id
+                    })
+                continue
+            
             # ===== END INTERVIEW =====
             elif message_type == "end":
                 if session_id:
@@ -229,11 +280,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         json.dump(interview_sessions[session_id], f, indent=2)
     
     except Exception as e:
-        logger.error(f"❌ WebSocket error: {e}")
-        await websocket.send_json({
-            "type": "error",
-            "message": str(e)
-        })
+        logger.debug(f"WebSocket exception: {type(e).__name__}")
     
     finally:
         if websocket in active_websockets:

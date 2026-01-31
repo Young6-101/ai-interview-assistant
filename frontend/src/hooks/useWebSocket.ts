@@ -1,6 +1,9 @@
 import { useEffect, useRef, useCallback } from 'react'
 import { useInterview } from '../contexts/InterviewContext'
 
+/**
+ * WebSocket configuration and URL derivation
+ */
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 const WS_URL = (() => {
   if (API_BASE_URL.startsWith('https://')) {
@@ -21,25 +24,39 @@ interface WebSocketMessage {
 export const useWebSocket = () => {
   const context = useInterview()
   const wsRef = useRef<WebSocket | null>(null)
+  
+  // Reconnection management
   const reconnectAttemptsRef = useRef(0)
   const maxReconnectAttemptsRef = useRef(5)
-  const reconnectDelayRef = useRef(1000)
-  const handleCloseRef = useRef<(event: Event) => void>(() => {})
+  const reconnectDelayRef = useRef(3000)
+  
+  // Ref pattern to handle the latest context without triggering re-renders
+  const contextRef = useRef(context)
+  useEffect(() => {
+    contextRef.current = context
+  }, [context])
 
+  // Ref for the close handler to prevent stale closures in event listeners
+  const handleCloseRef = useRef<(event: CloseEvent) => void>(() => {})
+
+  /**
+   * Generic message sender
+   */
   const send = useCallback((message: WebSocketMessage) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message))
       return true
     }
-    console.warn('WebSocket unavailable, message dropped:', message)
+    console.warn('WebSocket unavailable, message dropped:', message.type)
     return false
   }, [])
 
+  /**
+   * Sends transcript data to the backend
+   */
   const sendTranscript = useCallback(
     (speaker: string, text: string, timestamp?: number) => {
-      if (!text?.trim()) {
-        return false
-      }
+      if (!text?.trim()) return false
       return send({
         type: 'transcript',
         payload: {
@@ -52,50 +69,36 @@ export const useWebSocket = () => {
     [send]
   )
 
-  const startInterview = useCallback(() => {
-    const token = localStorage.getItem('token') ?? localStorage.getItem('access_token')
-    if (!token) {
-      console.warn('Cannot start interview: missing token')
-      return false
-    }
-
-    const mode = localStorage.getItem('interview_mode') ?? 'mode1'
-    return send({
-      type: 'start',
-      token,
-      mode
-    })
-  }, [send])
-
-  const pauseInterview = useCallback(() => send({ type: 'pause' }), [send])
-  const stopInterview = useCallback(() => send({ type: 'end' }), [send])
-
-  const disconnect = useCallback(() => {
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'Client disconnecting')
-      wsRef.current = null
-    }
-  }, [])
-
+  /**
+   * Message Router: Processes incoming data from backend
+   */
   const handleMessage = useCallback(
     (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data) as WebSocketMessage
-        if (!['new_transcript', 'session_started', 'session_ended', 'transcript_update', 'weak_points_updated'].includes(data.type)) {
-          console.log('WebSocket received:', data.type, data)
+        
+        // 1. SILENT HEARTBEAT: Exit immediately if it's a pong/ping
+        if (data.type === 'pong' || data.type === 'ping') {
+          return
+        }
+
+        // 2. LOGGING: Only log meaningful business messages
+        const businessTypes = ['session_started', 'session_ended', 'new_transcript', 'weak_points_updated']
+        if (businessTypes.includes(data.type)) {
+          console.log('WebSocket Event:', data.type, data.payload || '')
         }
 
         switch (data.type) {
           case 'session_started':
-            context.setInterviewState('RUNNING')
+            contextRef.current.setInterviewState('RUNNING')
             break
           case 'session_ended':
-            context.setInterviewState('ENDED')
+            contextRef.current.setInterviewState('ENDED')
             break
           case 'new_transcript':
           case 'transcript_update': {
             const payload = data.payload || data
-            context.addTranscript({
+            contextRef.current.addTranscript({
               id: payload.id || `${Date.now()}_${Math.random()}`,
               speaker: ((payload.speaker || 'UNKNOWN') as string).toUpperCase() as 'HR' | 'CANDIDATE',
               text: payload.text || payload.transcript || '',
@@ -104,59 +107,17 @@ export const useWebSocket = () => {
             })
             break
           }
-          case 'partial_transcript_update': {
-            const payload = data.payload || data
-            const id = payload.id || payload.block_id
-            if (id) {
-              context.updateTranscript(id, {
-                text: payload.text || payload.transcript || ''
-              })
-            }
-            break
-          }
-          case 'weak_points':
-          case 'weak_points_update':
           case 'weak_points_updated': {
             const payload = data.payload || data
             const points = Array.isArray(payload) ? payload : [payload]
             points.forEach((point: any) => {
-              context.addWeakPoint({
+              contextRef.current.addWeakPoint({
                 id: point.id || `${Date.now()}_${Math.random()}`,
                 category: point.category || 'General',
                 description: point.description || point.text || '',
                 details: point.details || point.explanation,
                 timestamp: point.timestamp || Date.now()
               })
-            })
-            break
-          }
-          case 'suggested_questions_result': {
-            const payload = data.payload || data
-            const questions = payload.question || payload.questions
-            if (questions) {
-              const text = Array.isArray(questions) ? questions.join('\n') : questions
-              context.addSuggestedQuestion({
-                id: `${Date.now()}_${Math.random()}`,
-                text,
-                skill: payload.target_skill || 'General',
-                timestamp: Date.now()
-              })
-            }
-            break
-          }
-          case 'new_topic': {
-            const payload = data.payload || data
-            context.addTopic({
-              id: payload.id || `${Date.now()}_${Math.random()}`,
-              name: payload.name || payload.topic || '',
-              timestamp: Date.now()
-            })
-            break
-          }
-          case 'topic_updated': {
-            const payload = data.payload || data
-            context.updateTopic(payload.id, {
-              updated: Date.now()
             })
             break
           }
@@ -167,77 +128,86 @@ export const useWebSocket = () => {
         console.error('Error parsing WebSocket message:', error)
       }
     },
-    [context]
+    [] // Stable dependencies
   )
 
   const handleOpen = useCallback(() => {
-    console.log('WebSocket connected')
-    context.setWebSocketConnected(true)
+    console.log('WebSocket status: Connected')
+    contextRef.current.setWebSocketConnected(true)
     reconnectAttemptsRef.current = 0
     reconnectDelayRef.current = 1000
-  }, [context])
+    send({ type: 'ping' })
+  }, [send])
 
-  const handleError = useCallback(
-    (error: Event) => {
-      console.error('WebSocket error:', error)
-      context.setWebSocketConnected(false)
-    },
-    [context]
-  )
+  const handleError = useCallback((error: Event) => {
+    console.error('WebSocket error:', error)
+    contextRef.current.setWebSocketConnected(false)
+  }, [])
 
+  /**
+   * Connection logic with safety checks
+   */
   const connect = useCallback(
-    (url: string = WS_URL) => {
+  (url: string = "ws://127.0.0.1:8000/ws") => { // 直接写死测试地址
+      if (wsRef.current && (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+
       try {
-        console.log('Connecting to WebSocket:', url)
-        const socket = new WebSocket(url)
-        wsRef.current = socket
+        console.log('--- ATTEMPTING LOCAL WS CONNECT ---');
+        const socket = new WebSocket(url);
         socket.onopen = handleOpen
-        socket.onmessage = handleMessage
-        socket.onclose = handleCloseRef.current
-        socket.onerror = handleError
-      } catch (error) {
-        console.error('WebSocket connection failed:', error)
-        context.setWebSocketConnected(false)
+      } catch (e) {
+        console.error('WS Connection logic crashed:', e);
       }
     },
-    [handleOpen, handleMessage, handleError, context]
+    [handleOpen, handleMessage, handleError]
   )
 
   const handleClose = useCallback(
-    () => {
-      console.log('WebSocket disconnected')
-      context.setWebSocketConnected(false)
-      if (reconnectAttemptsRef.current < maxReconnectAttemptsRef.current) {
+    (event?: CloseEvent) => {
+      console.log(`WebSocket closed (Code: ${event?.code})`)
+      contextRef.current.setWebSocketConnected(false)
+      
+      // Only reconnect on abnormal closure (not Code 1000)
+      if (event?.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttemptsRef.current) {
         reconnectAttemptsRef.current += 1
-        const delay = reconnectDelayRef.current
-        console.log(`Scheduling reconnect attempt ${reconnectAttemptsRef.current} in ${delay}ms`)
-        setTimeout(() => {
-          connect()
-        }, delay)
+        console.log(`Retrying connection (${reconnectAttemptsRef.current}/${maxReconnectAttemptsRef.current})...`)
+        setTimeout(() => connect(), reconnectDelayRef.current)
         reconnectDelayRef.current = Math.min(reconnectDelayRef.current * 2, 30000)
       }
     },
-    [context, connect]
+    [connect]
   )
 
   useEffect(() => {
     handleCloseRef.current = handleClose
   }, [handleClose])
 
+  /**
+   * Lifecycle Cleanup: Close socket on unmount
+   */
   useEffect(() => {
-    connect()
+    // connect() is NOT called here. Manual connection is required.
     return () => {
-      disconnect()
+      if (wsRef.current) {
+        wsRef.current.close(1000, 'Unmounting')
+        wsRef.current = null
+      }
     }
-  }, [connect, disconnect])
+  }, [])
 
   return {
     isConnected: context.isWebSocketConnected,
+    connect,
     send,
     sendTranscript,
-    startInterview,
-    pauseInterview,
-    stopInterview,
-    disconnect
+    startInterview: useCallback(() => {
+      const token = localStorage.getItem('token') ?? localStorage.getItem('access_token')
+      const mode = localStorage.getItem('interview_mode') ?? 'mode1'
+      return send({ type: 'start', token, mode })
+    }, [send]),
+    stopInterview: useCallback(() => send({ type: 'end' }), [send]),
+    disconnect: useCallback(() => wsRef.current?.close(1000), [])
   }
 }

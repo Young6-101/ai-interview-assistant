@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 
-interface AudioBlock {
+export interface AudioBlock {
   id: string
   speaker: 'HR' | 'CANDIDATE'
   transcript: string
@@ -115,8 +115,14 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
         }
       },
       stopRecording() {
-        stream?.getTracks().forEach((track) => track.stop())
-        audioContext?.close()
+        try {
+          stream?.getTracks().forEach((track) => track.stop())
+          if (audioContext && audioContext.state !== 'closed') {
+            audioContext.close()
+          }
+        } catch (e) {
+          console.warn('Error stopping recording:', e)
+        }
         audioBufferQueue = new Int16Array(0)
       }
     }
@@ -136,27 +142,36 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
       return merged
     }
 
+    function float32ToInt16(float32Array: Float32Array): Int16Array {
+      const int16Array = new Int16Array(float32Array.length)
+      for (let i = 0; i < float32Array.length; i++) {
+        int16Array[i] = float32Array[i] < 0 ? float32Array[i] * 0x8000 : float32Array[i] * 0x7fff
+      }
+      return int16Array
+    }
+
     return {
       async startRecording(onAudioCallback: (data: Uint8Array) => void) {
-        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-          sampleRate: 16000,
-          latencyHint: 'balanced'
-        })
-
-        source = audioContext.createMediaStreamSource(providedStream)
-
         try {
-          await audioContext.audioWorklet.addModule('/audio-processor.js')
-          audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor')
+          audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+            sampleRate: 16000,
+            latencyHint: 'balanced'
+          })
 
-          audioWorkletNode.port.onmessage = (event) => {
-            const currentBuffer = new Int16Array(event.data.audio_data)
-            audioBufferQueue = mergeBuffers(audioBufferQueue, currentBuffer)
+          source = audioContext.createMediaStreamSource(providedStream)
 
-            const bufferDuration = (audioBufferQueue.length / audioContext.sampleRate) * 1000
+          // Use ScriptProcessorNode as fallback (deprecated but reliable)
+          const processor = audioContext.createScriptProcessor(4096, 1, 1)
+
+          processor.onaudioprocess = (event) => {
+            const inputData = event.inputBuffer.getChannelData(0)
+            const int16Data = float32ToInt16(inputData)
+            audioBufferQueue = mergeBuffers(audioBufferQueue, int16Data)
+
+            const bufferDuration = (audioBufferQueue.length / 16000) * 1000
 
             if (bufferDuration >= 100) {
-              const totalSamples = Math.floor(audioContext.sampleRate * 0.1)
+              const totalSamples = Math.floor(16000 * 0.1)
               const finalBuffer = new Uint8Array(
                 audioBufferQueue.subarray(0, totalSamples).buffer
               )
@@ -166,16 +181,22 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
             }
           }
 
-          source.connect(audioWorkletNode)
-          audioWorkletNode.connect(audioContext.destination)
-          console.log('✅ Candidate audio worklet connected')
-        } catch (workletError) {
-          console.warn('AudioWorklet not available:', workletError)
-          source.connect(audioContext.destination)
+          source.connect(processor)
+          processor.connect(audioContext.destination)
+          console.log('✅ Candidate audio capture started (ScriptProcessor)')
+        } catch (error) {
+          console.error('Audio capture failed:', error)
+          throw error
         }
       },
       stopRecording() {
-        audioContext?.close()
+        try {
+          if (audioContext && audioContext.state !== 'closed') {
+            audioContext.close()
+          }
+        } catch (e) {
+          console.warn('Error stopping candidate recording:', e)
+        }
         audioBufferQueue = new Int16Array(0)
       }
     }
