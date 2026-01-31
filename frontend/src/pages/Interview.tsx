@@ -6,12 +6,6 @@ import { useMeetingRoom } from '../hooks/useMeetingRoom'
 import { useAudioCapture, type AudioBlock } from '../hooks/useAudioCapture'
 import '../App.css'
 
-const MODE_LABELS: Record<string, string> = {
-  mode1: 'Mode 1 · Guided',
-  mode2: 'Mode 2 · Open Q&A',
-  mode3: 'Mode 3 · Expert'
-}
-
 /**
  * ✅ Memoized SuggestedQuestion Item - prevents unnecessary re-renders
  */
@@ -126,8 +120,6 @@ export const Interview: FC = () => {
   const [isStarting, setIsStarting] = useState(false)
   
   const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
-  const candidateName = localStorage.getItem('candidate_name') ?? 'Candidate'
-  const modeLabel = MODE_LABELS[storedMode] || storedMode
 
   // ============ LIFECYCLE EFFECTS ============
 
@@ -353,47 +345,37 @@ export const Interview: FC = () => {
 
   // ============ RENDER (JSX) ============
   return (
-    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0f172a, #1f2a44)', color: '#0f172a' }}>
-      <div style={{ maxWidth: '1400px', margin: '0 auto', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '32px 0' }}>
-        <header style={{ padding: '0 32px 24px' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
-            <div>
-              <p style={{ margin: 0, letterSpacing: '0.3em', textTransform: 'uppercase', fontSize: '12px', color: '#94a3b8' }}>Live interview</p>
-              <h1 style={{ margin: '6px 0 0', fontSize: '36px', color: '#f8fafc' }}>{candidateName}</h1>
-              <p style={{ margin: '4px 0 0', fontSize: '16px', color: '#cbd5f5' }}>Mode: {modeLabel}</p>
+    <div style={{ height: '100vh', background: 'linear-gradient(180deg, #0f172a, #1f2a44)', color: '#0f172a', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <header style={{ padding: '20px 32px', borderBottom: '1px solid rgba(248,250,252,0.1)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '32px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Guided' : storedMode === 'mode2' ? 'Open Q&A' : 'Expert'}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                <span style={{ fontSize: '14px', color: '#e2e8f0' }}>Status:</span>
-                <span style={{ width: '10px', height: '10px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171', display: 'inline-block' }} />
-                <span style={{ color: '#e2e8f0', fontSize: '14px' }}>{isConnected ? 'Connected' : 'Connecting...'}</span>
-              </div>
-              <button
-                onClick={handleLogout}
-                style={{ padding: '8px 18px', borderRadius: '999px', border: '1px solid rgba(248,250,252,0.5)', background: 'rgba(248,250,252,0.15)', color: '#f8fafc', cursor: 'pointer' }}
-              >
-                Logout
-              </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: 1, justifyContent: 'center' }}>
+              <span style={{ fontSize: '14px', color: '#cbd5f5' }}>Status:</span>
+              <span style={{ width: '8px', height: '8px', borderRadius: '999px', backgroundColor: isConnected ? '#4ade80' : '#f87171' }} />
+              <span style={{ fontSize: '14px', color: '#e2e8f0' }}>{isConnected ? 'Connected' : 'Waiting...'}</span>
             </div>
+            <button
+              onClick={handleLogout}
+              style={{ padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(248,250,252,0.3)', background: 'rgba(248,250,252,0.05)', color: '#cbd5f5', fontSize: '13px', cursor: 'pointer' }}
+            >
+              Logout
+            </button>
           </div>
         </header>
 
         {error && (
-          <div style={{ margin: '0 32px 20px', padding: '12px 16px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca' }}>
+          <div style={{ margin: '16px 32px 0', padding: '12px 16px', borderRadius: '12px', backgroundColor: '#fee2e2', color: '#991b1b', border: '1px solid #fecaca', fontSize: '13px' }}>
             {error}
           </div>
         )}
 
-        <main style={{ flex: 1, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 340px', gap: '24px', padding: '0 32px 32px' }}>
+        <main style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px', padding: '24px 32px', minHeight: 0 }}>
           <section style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <div style={{ backgroundColor: 'white', borderRadius: '28px', padding: '26px', boxShadow: '0 25px 60px rgba(15,23,42,0.45)', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-start' }}>
-                <div>
-                  <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#94a3b8' }}>Meeting Room</p>
-                  <p style={{ margin: '4px 0 0', fontSize: '14px', color: '#475569' }}>
-                    {isSharing ? 'Screen sharing in progress' : 'Select a meeting room to get started'}
-                  </p>
-                </div>
+            <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 25px 60px rgba(15,23,42,0.45)', display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, minHeight: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center' }}>
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                   <button
                     onClick={hrMicOn ? handleStopHrMic : handleStartHrMic}
@@ -421,7 +403,7 @@ export const Interview: FC = () => {
                 </div>
               </div>
               
-              <div style={{ borderRadius: '18px', overflow: 'hidden', position: 'relative', minHeight: '240px', backgroundColor: '#0f172a' }}>
+              <div style={{ borderRadius: '16px', overflow: 'hidden', position: 'relative', flex: 1, backgroundColor: '#0f172a', minHeight: 0 }}>
                 {isSharing && screenStream ? (
                   <div style={{ width: '100%', height: '100%' }}>
                     <video
@@ -462,33 +444,25 @@ export const Interview: FC = () => {
                   </div>
                 )}
               </div>
-            </div>
-            
-            {/* Transcript Area */}
-            <div style={{ backgroundColor: 'white', borderRadius: '24px', padding: '22px', boxShadow: '0 25px 60px rgba(15,23,42,0.2)' }}>
-              <div style={{ marginBottom: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Transcript</h3>
-                <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#6b7280' }}>Live captions streamed from AssemblyAI</p>
-              </div>
-              {/* ✅ OPTIMIZED: Direct DOM container instead of React rendering */}
-              <div 
-                ref={transcriptContainerRef}
-                style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}
-              >
-                {/* Will be populated by DOM directly */}
+              
+              {/* Transcript Area */}
+              <div style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 25px 60px rgba(15,23,42,0.2)', display: 'flex', flexDirection: 'column', gap: '12px', flex: 1, minHeight: 0 }}>
+                <h3 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Transcript</h3>
+                <div 
+                  ref={transcriptContainerRef}
+                  style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0 }}
+                >
+                  {/* Will be populated by DOM directly */}
+                </div>
               </div>
             </div>
           </section>
 
           {/* Suggestions Sidebar */}
-          <aside style={{ backgroundColor: 'white', borderRadius: '28px', padding: '24px', boxShadow: '0 25px 60px rgba(15,23,42,0.25)', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-            <div>
-              <p style={{ margin: 0, fontSize: '13px', letterSpacing: '0.2em', textTransform: 'uppercase', color: '#94a3b8' }}>Coaching cue</p>
-              <h3 style={{ margin: '6px 0 0', fontSize: '18px', color: '#0f172a' }}>Follow-up questions</h3>
-            </div>
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '420px', overflowY: 'auto' }}>
+          <aside style={{ backgroundColor: 'white', borderRadius: '16px', padding: '20px', boxShadow: '0 25px 60px rgba(15,23,42,0.25)', display: 'flex', flexDirection: 'column', gap: '12px', minHeight: 0 }}>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '10px', overflowY: 'auto', minHeight: 0 }}>
               {context.suggestedQuestions.length === 0 ? (
-                <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px' }}>Generating follow-up suggestions...</p>
+                <p style={{ margin: 0, color: '#0f172a', fontSize: '16px', fontWeight: 700 }}>Follow-up questions</p>
               ) : (
                 context.suggestedQuestions.map((q) => (
                   <SuggestedQuestionItem key={q.id} question={q} />

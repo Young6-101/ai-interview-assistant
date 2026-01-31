@@ -233,57 +233,33 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
         const { transcript, end_of_turn, turn_is_formatted } = msg
         const now = Date.now()
 
-        // 3-second pause detection: start new block
-        if (now - lastBlockTimeRef.current >= 3000 && hrBlockTranscriptRef.current.trim()) {
-          console.log('🔄 3-second pause detected (HR). Block completed.')
+        // Update transcript
+        if (transcript) {
+          hrBlockTranscriptRef.current = transcript
+          lastBlockTimeRef.current = now
+        }
 
-          // Send previous block
+        // Send when turn is formatted and finalized
+        if (end_of_turn && turn_is_formatted && hrBlockTranscriptRef.current.trim()) {
+          // Send the complete transcript
           if (onTranscript) {
             onTranscript({
               id: hrBlockIdRef.current,
               speaker: 'HR',
               transcript: hrBlockTranscriptRef.current,
-              timestamp: Date.now()
+              timestamp: now
             })
           }
-
-          // Start new block
-          hrBlockIdRef.current = `turn_${now}`
+          
+          // Reset for next block
           hrBlockTranscriptRef.current = ''
-
+          hrBlockIdRef.current = `turn_${now}`
+          
+          // Clear any pending timer
           if (hrBlockTimerRef.current) {
             clearTimeout(hrBlockTimerRef.current)
+            hrBlockTimerRef.current = null
           }
-        }
-
-        // Update transcript
-        if (transcript) {
-          hrBlockTranscriptRef.current = transcript
-        }
-
-        // Finalized turn
-        if (end_of_turn && turn_is_formatted) {
-          lastBlockTimeRef.current = now
-
-          // Schedule block completion timer
-          if (hrBlockTimerRef.current) {
-            clearTimeout(hrBlockTimerRef.current)
-          }
-          hrBlockTimerRef.current = setTimeout(() => {
-            if (hrBlockTranscriptRef.current.trim()) {
-              console.log('Block completion timer fired (HR)')
-              if (onTranscript) {
-                onTranscript({
-                  id: hrBlockIdRef.current,
-                  speaker: 'HR',
-                  transcript: hrBlockTranscriptRef.current,
-                  timestamp: Date.now()
-                })
-              }
-              hrBlockTranscriptRef.current = ''
-              hrBlockIdRef.current = `turn_${Date.now()}`
-            }
-          }, 3000)
         }
       }
 

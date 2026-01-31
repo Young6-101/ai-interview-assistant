@@ -269,7 +269,11 @@ export const useWebSocketOptimized = () => {
         }
 
         default:
-          console.log('Unhandled message:', data.type)
+          if (data.type === 'error') {
+            console.warn('⚠️ Backend error:', data.payload || data)
+          } else {
+            console.log('Unhandled message:', data.type)
+          }
       }
     } catch (e) {
       console.error('WS Parse Error:', e)
