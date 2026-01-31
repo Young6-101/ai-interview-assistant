@@ -2,9 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const modeOptions = [
-  { value: 'mode1', label: 'Mode 1 · Guided', description: 'Structured script with coaching hints.' },
-  { value: 'mode2', label: 'Mode 2 · Open Q&A', description: 'Free-form chat for relaxed practice.' },
-  { value: 'mode3', label: 'Mode 3 · Expert', description: 'Detailed critique + edge-case follow-ups.' }
+  { value: 'mode1', label: 'Mode 1 · Standard', description: 'Normal interview mode without AI notifications.' },
+  { value: 'mode2', label: 'Mode 2 · Transparent', description: 'Shows AI warning for 10 seconds when generating questions.' },
+  { value: 'mode3', label: 'Mode 3 · Full Disclosure', description: 'Continuously displays AI usage warning to candidate.' }
 ] as const
 
 type ModeOption = (typeof modeOptions)[number]['value']
@@ -68,7 +68,7 @@ export const Login = () => {
             textAlign: 'center'
           }}
         >
-          AI Interview Lab
+          AI Interview
         </h1>
         <p style={{ color: '#475569', fontSize: '14px', textAlign: 'center', marginBottom: '24px' }}>
           Simple testing flow: enter your name, pick a mode, and start the interview (no recording is stored).

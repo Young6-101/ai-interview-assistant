@@ -78,7 +78,9 @@ export const useWebSocketOptimized = () => {
         // ✅ Element exists: only update text content
         const textNode = existingElement.querySelector('.transcript-text')
         if (textNode) {
-          textNode.textContent = payload.text
+          // Update with full text format: "SPEAKER: content"
+          const fullText = `${payload.speaker}: ${payload.text}`
+          textNode.textContent = fullText
         }
 
         if (payload.isFinal) {
@@ -87,39 +89,39 @@ export const useWebSocketOptimized = () => {
           existingElement.classList.add('final')
         }
       } else {
-        // ✅ New element: create DOM node
+        // ✅ New element: create DOM node - speaker and content in one line
         const div = document.createElement('div')
         div.id = `transcript-${payload.id}`
         div.className = `transcript-item ${payload.speaker === 'HR' ? 'hr' : 'candidate'}`
         div.style.cssText = `
-          padding: 12px;
-          border-radius: 12px;
-          background-color: ${payload.speaker === 'HR' ? '#eff6ff' : '#f0fdf4'};
-          border-left: 3px solid ${payload.speaker === 'HR' ? '#3b82f6' : '#10b981'};
-          margin-bottom: 10px;
-        `
+          padding: 8px 12px;
+          margin-bottom: 4px;
+          border-radius: 8px;
+          font-size: 13px;
+          line-height: 1.4;
+          text-align: left;
+`
 
         const speakerSpan = document.createElement('span')
         speakerSpan.style.cssText = `
-          font-size: 12px;
           font-weight: 600;
-          color: ${payload.speaker === 'HR' ? '#1d4ed8' : '#047857'};
+          color: ${payload.speaker === 'HR' ? '#3b82f6' : '#10b981'};
         `
-        speakerSpan.textContent = `[${payload.speaker}]`
+        speakerSpan.textContent = payload.speaker
 
-        const textDiv = document.createElement('p')
-        textDiv.className = 'transcript-text'
-        textDiv.style.cssText = 'margin: 6px 0 4px; font-size: 13px; color: #0f172a;'
-        textDiv.textContent = payload.text
+        const colonSpan = document.createElement('span')
+        colonSpan.style.cssText = 'color: #6b7280;'
+        colonSpan.textContent = ': '
 
-        const timeSpan = document.createElement('span')
-        timeSpan.style.cssText = 'font-size: 11px; color: #94a3b8;'
-        timeSpan.textContent = new Date(payload.timestamp).toLocaleTimeString()
+        // 对话内容（深灰）
+        const textSpan = document.createElement('span')
+        textSpan.style.cssText = 'color: #374151;'
+        textSpan.textContent = payload.text
 
+        // 组装
         div.appendChild(speakerSpan)
-        div.appendChild(textDiv)
-        div.appendChild(document.createElement('br'))
-        div.appendChild(timeSpan)
+        div.appendChild(colonSpan)
+        div.appendChild(textSpan)
 
         container.appendChild(div)
 

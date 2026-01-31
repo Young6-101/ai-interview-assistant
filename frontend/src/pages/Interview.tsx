@@ -6,6 +6,22 @@ import { useMeetingRoom } from '../hooks/useMeetingRoom'
 import { useAudioCapture, type AudioBlock } from '../hooks/useAudioCapture'
 import '../App.css'
 
+// CSS animations for AI warning
+const pulseKeyframes = `
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.8; transform: scale(1.02); }
+  }
+`
+
+// Inject styles
+if (!document.querySelector('#interview-styles')) {
+  const styleSheet = document.createElement('style')
+  styleSheet.id = 'interview-styles'
+  styleSheet.textContent = pulseKeyframes
+  document.head.appendChild(styleSheet)
+}
+
 /**
  * ✅ Memoized SuggestedQuestion Item - prevents unnecessary re-renders
  */
@@ -94,8 +110,18 @@ export const Interview: FC = () => {
   const [hrMicOn, setHrMicOn] = useState(false)
   const [isSelecting, setIsSelecting] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
+  const [showAIWarning, setShowAIWarning] = useState(false)
   
   const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
+  
+  // AI Warning visibility logic based on mode
+  useEffect(() => {
+    if (storedMode === 'mode3') {
+      setShowAIWarning(true)
+    } else {
+      setShowAIWarning(false)
+    }
+  }, [storedMode])
 
   // ============ LIFECYCLE EFFECTS ============
 
@@ -279,6 +305,14 @@ export const Interview: FC = () => {
     }
     
     setIsAnalyzing(true)
+    
+    // Mode-based AI warning logic
+    if (storedMode === 'mode2') {
+      setShowAIWarning(true)
+      // Hide after 10 seconds
+      setTimeout(() => setShowAIWarning(false), 10000)
+    }
+    
     try {
       requestAnalysis()
       // 按钮会在收到响应后自动恢复
@@ -369,6 +403,25 @@ export const Interview: FC = () => {
             {error}
           </div>
         )}
+        
+        {/* AI Warning Banner */}
+        {showAIWarning && (
+          <div style={{
+            margin: '16px 32px 0',
+            padding: '16px',
+            borderRadius: '12px',
+            background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+            color: '#92400e',
+            fontSize: '14px',
+            fontWeight: 600,
+            textAlign: 'center',
+            border: '2px solid #fcd34d',
+            boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
+            animation: storedMode === 'mode2' ? 'pulse 2s ease-in-out infinite' : 'none'
+          }}>
+            ⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW
+          </div>
+        )}
 
         <main style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px', padding: '24px 32px', minHeight: 0 }}>
           <section style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -448,7 +501,7 @@ export const Interview: FC = () => {
                 <h3 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Transcript</h3>
                 <div 
                   ref={transcriptContainerRef}
-                  style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', minHeight: 0 }}
+                  style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '2px', minHeight: 0, padding: '8px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}
                 >
                   {/* Will be populated by DOM directly */}
                 </div>
