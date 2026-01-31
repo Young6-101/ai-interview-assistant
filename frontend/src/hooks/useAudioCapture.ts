@@ -37,6 +37,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
   const hrBlockIdRef = useRef<string>('')
   const hrBlockTranscriptRef = useRef<string>('')
   const hrBlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hrBlockSentRef = useRef<boolean>(false) // Prevent duplicate sends
 
   // Candidate Audio state
   const candidateMicRef = useRef<any>(null)
@@ -44,6 +45,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
   const candidateBlockIdRef = useRef<string>('')
   const candidateBlockTranscriptRef = useRef<string>('')
   const candidateBlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const candidateBlockSentRef = useRef<boolean>(false) // Prevent duplicate sends
 
   // Configuration
   const assemblyAITokenRef = useRef<string>('')
@@ -205,6 +207,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
       // Initialize HR block
       hrBlockIdRef.current = `turn_${Date.now()}`
       hrBlockTranscriptRef.current = ''
+      hrBlockSentRef.current = false // Reset flag for new session
 
       // Create microphone
       hrMicRef.current = createMicrophone()
@@ -239,8 +242,10 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
           lastBlockTimeRef.current = now
         }
 
-        // Send when turn is formatted and finalized
-        if (end_of_turn && turn_is_formatted && hrBlockTranscriptRef.current.trim()) {
+        // Send when turn is formatted and finalized (only once per turn)
+        if (end_of_turn && turn_is_formatted && hrBlockTranscriptRef.current.trim() && !hrBlockSentRef.current) {
+          hrBlockSentRef.current = true // Mark as sent to prevent duplicates
+          
           // Send the complete transcript
           if (onTranscript) {
             onTranscript({
@@ -254,6 +259,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
           // Reset for next block
           hrBlockTranscriptRef.current = ''
           hrBlockIdRef.current = `turn_${now}`
+          hrBlockSentRef.current = false // Ready for next turn
           
           // Clear any pending timer
           if (hrBlockTimerRef.current) {
@@ -326,6 +332,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
         // Initialize Candidate block
         candidateBlockIdRef.current = `turn_${Date.now()}`
         candidateBlockTranscriptRef.current = ''
+        candidateBlockSentRef.current = false // Reset flag for new session
 
         // Create candidate microphone from screen stream
         candidateMicRef.current = createCandidateMicrophone(screenStream)
@@ -359,7 +366,9 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
             candidateBlockTranscriptRef.current = transcript
           }
 
-          if (end_of_turn && turn_is_formatted) {
+          if (end_of_turn && turn_is_formatted && !candidateBlockSentRef.current) {
+            candidateBlockSentRef.current = true // Mark as sent to prevent duplicates
+            
             // Send candidate transcript
             if (onTranscript) {
               onTranscript({
@@ -372,6 +381,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
 
             candidateBlockTranscriptRef.current = ''
             candidateBlockIdRef.current = `turn_${now}`
+            candidateBlockSentRef.current = false // Ready for next turn
           }
         }
 

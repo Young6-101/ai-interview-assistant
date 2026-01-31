@@ -60,34 +60,7 @@ export const Interview: FC = () => {
     (block: AudioBlock) => {
       const speakerLabel = block.speaker === 'HR' ? 'HR' : 'CANDIDATE'
       
-      // 1. Update UI directly via DOM (for immediate display)
-      if (transcriptContainerRef.current) {
-        const container = transcriptContainerRef.current
-        const div = document.createElement('div')
-        div.style.cssText = 'padding: 12px; border-radius: 12px; border: 1px solid #e5e7eb; background-color: #f9fafb;'
-        
-        const speakerSpan = document.createElement('span')
-        speakerSpan.style.cssText = `font-size: 12px; font-weight: 600; color: ${speakerLabel === 'HR' ? '#1d4ed8' : '#047857'};`
-        speakerSpan.textContent = `[${speakerLabel}]`
-        
-        const textDiv = document.createElement('p')
-        textDiv.style.cssText = 'margin: 6px 0 4px; font-size: 13px; color: #0f172a;'
-        textDiv.textContent = block.transcript
-        
-        const timeSpan = document.createElement('span')
-        timeSpan.style.cssText = 'font-size: 11px; color: #94a3b8;'
-        timeSpan.textContent = new Date(block.timestamp).toLocaleTimeString()
-        
-        div.appendChild(speakerSpan)
-        div.appendChild(textDiv)
-        div.appendChild(document.createElement('br'))
-        div.appendChild(timeSpan)
-        
-        container.appendChild(div)
-        setTimeout(() => { container.scrollTop = container.scrollHeight }, 0)
-      }
-      
-      // 2. Update Context for global state
+      // 1. Update Context for global state
       contextRef.current.addTranscript({
         id: block.id,
         speaker: speakerLabel,
@@ -96,7 +69,9 @@ export const Interview: FC = () => {
         isFinal: true
       })
       
-      // 3. Forward to backend via WebSocket
+      // 2. Forward to backend via WebSocket
+      // The backend will broadcast it back, and useWebSocketOptimized 
+      // will handle DOM updates via broadcast_update
       sendTranscript(speakerLabel, block.transcript, block.timestamp)
     },
     [sendTranscript]
