@@ -120,10 +120,10 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
           if (audioContext && audioContext.state !== 'closed') {
             audioContext.close()
           }
+          audioBufferQueue = new Int16Array(0)
         } catch (e) {
           console.warn('Error stopping recording:', e)
         }
-        audioBufferQueue = new Int16Array(0)
       }
     }
   }, [])
@@ -142,36 +142,27 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
       return merged
     }
 
-    function float32ToInt16(float32Array: Float32Array): Int16Array {
-      const int16Array = new Int16Array(float32Array.length)
-      for (let i = 0; i < float32Array.length; i++) {
-        int16Array[i] = float32Array[i] < 0 ? float32Array[i] * 0x8000 : float32Array[i] * 0x7fff
-      }
-      return int16Array
-    }
-
     return {
       async startRecording(onAudioCallback: (data: Uint8Array) => void) {
+        audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
+          sampleRate: 16000,
+          latencyHint: 'balanced'
+        })
+
+        source = audioContext.createMediaStreamSource(providedStream)
+
         try {
-          audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({
-            sampleRate: 16000,
-            latencyHint: 'balanced'
-          })
+          await audioContext.audioWorklet.addModule('/audio-processor.js')
+          audioWorkletNode = new AudioWorkletNode(audioContext, 'audio-processor')
 
-          source = audioContext.createMediaStreamSource(providedStream)
+          audioWorkletNode.port.onmessage = (event) => {
+            const currentBuffer = new Int16Array(event.data.audio_data)
+            audioBufferQueue = mergeBuffers(audioBufferQueue, currentBuffer)
 
-          // Use ScriptProcessorNode as fallback (deprecated but reliable)
-          const processor = audioContext.createScriptProcessor(4096, 1, 1)
-
-          processor.onaudioprocess = (event) => {
-            const inputData = event.inputBuffer.getChannelData(0)
-            const int16Data = float32ToInt16(inputData)
-            audioBufferQueue = mergeBuffers(audioBufferQueue, int16Data)
-
-            const bufferDuration = (audioBufferQueue.length / 16000) * 1000
+            const bufferDuration = (audioBufferQueue.length / audioContext.sampleRate) * 1000
 
             if (bufferDuration >= 100) {
-              const totalSamples = Math.floor(16000 * 0.1)
+              const totalSamples = Math.floor(audioContext.sampleRate * 0.1)
               const finalBuffer = new Uint8Array(
                 audioBufferQueue.subarray(0, totalSamples).buffer
               )
@@ -181,12 +172,12 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
             }
           }
 
-          source.connect(processor)
-          processor.connect(audioContext.destination)
-          console.log('✅ Candidate audio capture started (ScriptProcessor)')
-        } catch (error) {
-          console.error('Audio capture failed:', error)
-          throw error
+          source.connect(audioWorkletNode)
+          audioWorkletNode.connect(audioContext.destination)
+          console.log('✅ Candidate audio worklet connected')
+        } catch (workletError) {
+          console.warn('AudioWorklet not available:', workletError)
+          source.connect(audioContext.destination)
         }
       },
       stopRecording() {
@@ -194,10 +185,10 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
           if (audioContext && audioContext.state !== 'closed') {
             audioContext.close()
           }
+          audioBufferQueue = new Int16Array(0)
         } catch (e) {
           console.warn('Error stopping candidate recording:', e)
         }
-        audioBufferQueue = new Int16Array(0)
       }
     }
   }, [])
@@ -310,18 +301,31 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
   }, [createMicrophone, onTranscript])
 
   const stopHrRecording = useCallback(() => {
-    if (hrWsRef.current) {
-      hrWsRef.current.close()
-      hrWsRef.current = null
-    }
+    // 1. Stop microphone FIRST to prevent more audio from being captured
     if (hrMicRef.current) {
       hrMicRef.current.stopRecording()
-    }
-    if (hrBlockTimerRef.current) {
-      clearTimeout(hrBlockTimerRef.current)
+      hrMicRef.current = null
     }
 
-    // Send final block if exists
+    // 2. Close WebSocket to stop sending audio to AssemblyAI
+    if (hrWsRef.current) {
+      try {
+        if (hrWsRef.current.readyState === WebSocket.OPEN) {
+          hrWsRef.current.close()
+        }
+      } catch (e) {
+        console.warn('Error closing HR WebSocket:', e)
+      }
+      hrWsRef.current = null
+    }
+
+    // 3. Clear any pending timers
+    if (hrBlockTimerRef.current) {
+      clearTimeout(hrBlockTimerRef.current)
+      hrBlockTimerRef.current = null
+    }
+
+    // 4. Send final block if exists
     if (hrBlockTranscriptRef.current.trim() && onTranscript) {
       onTranscript({
         id: hrBlockIdRef.current,
@@ -331,7 +335,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
       })
     }
 
-    console.log('HR audio capture stopped')
+    console.log('✅ HR audio capture stopped')
   }, [onTranscript])
 
   const startCandidateRecording = useCallback(
@@ -349,18 +353,19 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
 
         // Create candidate microphone from screen stream
         candidateMicRef.current = createCandidateMicrophone(screenStream)
-        await candidateMicRef.current.startRecording((audioChunk: Uint8Array) => {
-          if (candidateWsRef.current?.readyState === WebSocket.OPEN) {
-            candidateWsRef.current.send(audioChunk)
-          }
-        })
 
-        // Connect to AssemblyAI
+        // Connect to AssemblyAI FIRST before starting recording
         const endpoint = `wss://streaming.assemblyai.com/v3/ws?sample_rate=16000&formatted_finals=true&token=${assemblyAITokenRef.current}`
         candidateWsRef.current = new WebSocket(endpoint)
 
         candidateWsRef.current.onopen = () => {
           console.log('✅ AssemblyAI WebSocket (Candidate) connected')
+          // NOW start sending audio after WebSocket is ready
+          candidateMicRef.current.startRecording((audioChunk: Uint8Array) => {
+            if (candidateWsRef.current?.readyState === WebSocket.OPEN) {
+              candidateWsRef.current.send(audioChunk)
+            }
+          })
         }
 
         candidateWsRef.current.onmessage = (event) => {
@@ -405,18 +410,31 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
   )
 
   const stopCandidateRecording = useCallback(() => {
-    if (candidateWsRef.current) {
-      candidateWsRef.current.close()
-      candidateWsRef.current = null
-    }
+    // 1. Stop microphone FIRST to prevent more audio from being captured
     if (candidateMicRef.current) {
       candidateMicRef.current.stopRecording()
-    }
-    if (candidateBlockTimerRef.current) {
-      clearTimeout(candidateBlockTimerRef.current)
+      candidateMicRef.current = null
     }
 
-    console.log('Candidate audio capture stopped')
+    // 2. Close WebSocket to stop sending audio to AssemblyAI
+    if (candidateWsRef.current) {
+      try {
+        if (candidateWsRef.current.readyState === WebSocket.OPEN) {
+          candidateWsRef.current.close()
+        }
+      } catch (e) {
+        console.warn('Error closing Candidate WebSocket:', e)
+      }
+      candidateWsRef.current = null
+    }
+
+    // 3. Clear any pending timers
+    if (candidateBlockTimerRef.current) {
+      clearTimeout(candidateBlockTimerRef.current)
+      candidateBlockTimerRef.current = null
+    }
+
+    console.log('✅ Candidate audio capture stopped')
   }, [])
 
   // Cleanup on unmount

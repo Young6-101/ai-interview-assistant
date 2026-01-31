@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Import routers
-from routes import auth, interview
+from routes import auth, interview, config
 
 # Load environment variables
 load_dotenv()
@@ -35,6 +35,7 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router)
 app.include_router(interview.router)
+app.include_router(config.router)
 
 # ============ HEALTH CHECK ============
 

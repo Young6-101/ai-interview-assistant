@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, type FC, useRef } from 'react'
+import React, { useState, useEffect, useCallback, type FC, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useInterview } from '../contexts/InterviewContext'
-import { useWebSocket } from '../hooks/useWebSocket'
+import { useWebSocketOptimized } from '../hooks/useWebSocketOptimized'
 import { useMeetingRoom } from '../hooks/useMeetingRoom'
 import { useAudioCapture, type AudioBlock } from '../hooks/useAudioCapture'
 import '../App.css'
@@ -12,16 +12,30 @@ const MODE_LABELS: Record<string, string> = {
   mode3: 'Mode 3 · Expert'
 }
 
+/**
+ * ✅ Memoized SuggestedQuestion Item - prevents unnecessary re-renders
+ */
+const SuggestedQuestionItem = React.memo(
+  ({ question }: { question: { id: string; text: string; skill: string } }) => (
+    <div style={{ padding: '14px', borderRadius: '16px', border: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
+      <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>{question.skill}</p>
+      <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>{question.text}</p>
+    </div>
+  ),
+  (prev, next) => prev.question.id === next.question.id && prev.question.text === next.question.text
+)
+SuggestedQuestionItem.displayName = 'SuggestedQuestionItem'
+
 export const Interview: FC = () => {
   const navigate = useNavigate()
   const context = useInterview()
   
   /**
    * 1. Initialize custom hooks.
-   * Make sure useWebSocket is the refactored version that provides 'connect'.
+   * Now using the optimized useWebSocketOptimized that handles DOM updates directly
    */
-  const { isConnected, connect, startInterview, stopInterview, sendTranscript, disconnect } = useWebSocket()
-  const { screenStream, isSharing, selectMeetingRoom, stopMeetingRoom, error: meetingRoomError } = useMeetingRoom()
+  const { isConnected, connect, startInterview, stopInterview, sendTranscript, disconnect, setTranscriptContainer } = useWebSocketOptimized()
+  const { screenStream, isSharing, selectMeetingRoom, stopMeetingRoom } = useMeetingRoom()
 
   /**
    * 2. Stable Context Reference.
@@ -35,6 +49,15 @@ export const Interview: FC = () => {
   }, [context])
 
   /**
+   * 2.5 Transcript Container Ref - for direct DOM manipulation
+   * The optimized WebSocket hook will update transcripts directly in this container
+   */
+  const transcriptContainerRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    setTranscriptContainer(transcriptContainerRef.current)
+  }, [setTranscriptContainer])
+
+  /**
    * 3. Stable Transcript Handler.
    * This function is passed to useAudioCapture. It must remain stable (same reference) 
    * so the microphone doesn't stop/start every time the component re-renders.
@@ -43,7 +66,34 @@ export const Interview: FC = () => {
     (block: AudioBlock) => {
       const speakerLabel = block.speaker === 'HR' ? 'HR' : 'CANDIDATE'
       
-      // Update UI state via Context Ref
+      // 1. Update UI directly via DOM (for immediate display)
+      if (transcriptContainerRef.current) {
+        const container = transcriptContainerRef.current
+        const div = document.createElement('div')
+        div.style.cssText = 'padding: 12px; border-radius: 12px; border: 1px solid #e5e7eb; background-color: #f9fafb;'
+        
+        const speakerSpan = document.createElement('span')
+        speakerSpan.style.cssText = `font-size: 12px; font-weight: 600; color: ${speakerLabel === 'HR' ? '#1d4ed8' : '#047857'};`
+        speakerSpan.textContent = `[${speakerLabel}]`
+        
+        const textDiv = document.createElement('p')
+        textDiv.style.cssText = 'margin: 6px 0 4px; font-size: 13px; color: #0f172a;'
+        textDiv.textContent = block.transcript
+        
+        const timeSpan = document.createElement('span')
+        timeSpan.style.cssText = 'font-size: 11px; color: #94a3b8;'
+        timeSpan.textContent = new Date(block.timestamp).toLocaleTimeString()
+        
+        div.appendChild(speakerSpan)
+        div.appendChild(textDiv)
+        div.appendChild(document.createElement('br'))
+        div.appendChild(timeSpan)
+        
+        container.appendChild(div)
+        setTimeout(() => { container.scrollTop = container.scrollHeight }, 0)
+      }
+      
+      // 2. Update Context for global state
       contextRef.current.addTranscript({
         id: block.id,
         speaker: speakerLabel,
@@ -52,10 +102,10 @@ export const Interview: FC = () => {
         isFinal: true
       })
       
-      // Forward the text to the backend via WebSocket
+      // 3. Forward to backend via WebSocket
       sendTranscript(speakerLabel, block.transcript, block.timestamp)
     },
-    [sendTranscript] // Only depends on sendTranscript, which is stable
+    [sendTranscript]
   )
 
   /**
@@ -72,10 +122,9 @@ export const Interview: FC = () => {
   // 5. Local UI States
   const [error, setError] = useState('')
   const [hrMicOn, setHrMicOn] = useState(false)
-  const [candidateMicOn, setCandidateMicOn] = useState(false)
   const [isSelecting, setIsSelecting] = useState(false)
+  const [isStarting, setIsStarting] = useState(false)
   
-  const assemblyToken = import.meta.env.VITE_ASSEMBLY_API_KEY ?? ''
   const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
   const candidateName = localStorage.getItem('candidate_name') ?? 'Candidate'
   const modeLabel = MODE_LABELS[storedMode] || storedMode
@@ -107,31 +156,59 @@ export const Interview: FC = () => {
   }, [navigate])
 
   /**
-   * C. AssemblyAI Configuration.
-   * Set the API token for the audio processing hook.
+   * C. Fetch AssemblyAI Configuration on Demand
    */
-  useEffect(() => {
-    if (assemblyToken) {
-      setAssemblyAIToken(assemblyToken)
-      if (error === 'Missing API Key') setError('')
-    } else {
-      setError('Missing API Key')
+  const fetchAssemblyAIConfig = useCallback(async (): Promise<string | null> => {
+    try {
+      const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+      const response = await fetch(`${API_BASE_URL}/api/config/assemblyai`)
+      if (!response.ok) {
+        throw new Error(`Failed to fetch AssemblyAI config: ${response.status}`)
+      }
+      const data = await response.json()
+      
+      // Try to use token first, fall back to API key
+      const token = data.token || data.apiKey
+      if (!token) {
+        throw new Error('AssemblyAI configuration not available on server')
+      }
+      console.log('✅ AssemblyAI config fetched from backend')
+      return token
+    } catch (err) {
+      console.error('Failed to fetch AssemblyAI config:', err)
+      throw err
     }
-  }, [assemblyToken, setAssemblyAIToken])
+  }, [])
 
   /**
-   * D. Candidate Recording Sync.
+   * D. Fetch AssemblyAI Token on Component Mount
+   * Get the token early so audio capture is ready immediately
+   */
+  useEffect(() => {
+    const initAssemblyAI = async () => {
+      try {
+        const token = await fetchAssemblyAIConfig()
+        if (token) {
+          setAssemblyAIToken(token)
+        }
+      } catch (err) {
+        console.error('Failed to initialize AssemblyAI on mount:', err)
+      }
+    }
+    initAssemblyAI()
+  }, [fetchAssemblyAIConfig, setAssemblyAIToken])
+
+  /**
+   * E. Candidate Recording Sync.
    * Automatically starts the candidate's mic capture when a screen stream is shared.
    */
   useEffect(() => {
     if (!screenStream) {
       stopCandidateRecording()
-      setCandidateMicOn(false)
       return
     }
 
     startCandidateRecording(screenStream)
-      .then(() => setCandidateMicOn(true))
       .catch((err) => {
         console.error('Candidate capture failed:', err)
         setError('Candidate mic failed: ' + (err?.message ?? 'Unknown'))
@@ -139,7 +216,6 @@ export const Interview: FC = () => {
 
     return () => {
       stopCandidateRecording()
-      setCandidateMicOn(false)
     }
   }, [screenStream, startCandidateRecording, stopCandidateRecording])
 
@@ -164,15 +240,35 @@ export const Interview: FC = () => {
 
   /**
    * Triggers the "start" message to the backend via WebSocket.
+   * Validates prerequisites (HR mic and meeting room are ready).
    */
   const handleStartInterview = () => {
-    if (!isConnected) return setError('Waiting for WebSocket connection...')
-    if (!isSharing) return setError('Please select a meeting room first')
-    if (!hrMicOn || !candidateMicOn) return setError('Ensure both HR and Candidate mics are active')
+    // Validation checks
+    if (!isConnected) {
+      setError('⚠️ Waiting for WebSocket connection...')
+      return
+    }
+    if (!isSharing) {
+      setError('⚠️ Please select a meeting room first')
+      return
+    }
+    if (!hrMicOn) {
+      setError('⚠️ Please turn on the HR microphone')
+      return
+    }
 
-    if (startInterview()) {
-      context.setInterviewState('RUNNING')
-      setError('')
+    // All prerequisites met - start interview
+    setIsStarting(true)
+    setError('')
+    try {
+      if (startInterview()) {
+        context.setInterviewState('RUNNING')
+        setError('')
+      }
+    } catch (err) {
+      setError('❌ Failed to start interview: ' + (err as Error).message)
+    } finally {
+      setIsStarting(false)
     }
   }
 
@@ -220,7 +316,6 @@ export const Interview: FC = () => {
         
         // 2. Reset states and stop internal audio logic
         stopCandidateRecording()
-        setCandidateMicOn(false)
         stopMeetingRoom() // Resets the context stream to null
         
         // 3. Small delay to allow the browser to process the hardware release
@@ -237,9 +332,13 @@ export const Interview: FC = () => {
   const handleStopInterview = () => {
     if (stopInterview()) {
       context.setInterviewState('ENDED')
+      // Stop all audio capture
       stopHrRecording()
       stopCandidateRecording()
       stopMeetingRoom()
+      // Reset mic states
+      setHrMicOn(false)
+      setError('')
     }
   }
 
@@ -249,6 +348,7 @@ export const Interview: FC = () => {
     navigate('/login')
   }
 
+  // 只需要：HR麦克风 + 屏幕共享都打开（Candidate会自动跟随Screen sharing）
   const canStartInterview = isSharing && hrMicOn
 
   // ============ RENDER (JSX) ============
@@ -304,10 +404,10 @@ export const Interview: FC = () => {
                   {context.interviewState === 'NOT_STARTED' && (
                     <button
                       onClick={handleStartInterview}
-                      disabled={!canStartInterview}
-                      style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: canStartInterview ? '#2563eb' : '#cbd5f5', color: '#fff', fontWeight: 600, cursor: canStartInterview ? 'pointer' : 'not-allowed' }}
+                      disabled={!canStartInterview || isStarting}
+                      style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: canStartInterview && !isStarting ? '#2563eb' : '#cbd5f5', color: '#fff', fontWeight: 600, cursor: canStartInterview && !isStarting ? 'pointer' : 'not-allowed' }}
                     >
-                      Start Interview
+                      {isStarting ? 'Starting...' : 'Start Interview'}
                     </button>
                   )}
                   {context.interviewState === 'RUNNING' && (
@@ -370,18 +470,12 @@ export const Interview: FC = () => {
                 <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a' }}>Transcript</h3>
                 <p style={{ margin: '6px 0 0', fontSize: '13px', color: '#6b7280' }}>Live captions streamed from AssemblyAI</p>
               </div>
-              <div style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {context.transcripts.length === 0 ? (
-                  <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px' }}>Waiting for first transcript...</p>
-                ) : (
-                  context.transcripts.map((t) => (
-                    <div key={t.id} style={{ padding: '12px', borderRadius: '12px', backgroundColor: t.speaker === 'HR' ? '#eff6ff' : '#f0fdf4', borderLeft: `3px solid ${t.speaker === 'HR' ? '#3b82f6' : '#10b981'}` }}>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: t.speaker === 'HR' ? '#1d4ed8' : '#047857' }}>[{t.speaker}]</span>
-                      <p style={{ margin: '6px 0 4px', fontSize: '13px' }}>{t.text}</p>
-                      <span style={{ fontSize: '11px', color: '#94a3b8' }}>{new Date(t.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                  ))
-                )}
+              {/* ✅ OPTIMIZED: Direct DOM container instead of React rendering */}
+              <div 
+                ref={transcriptContainerRef}
+                style={{ maxHeight: '320px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}
+              >
+                {/* Will be populated by DOM directly */}
               </div>
             </div>
           </section>
@@ -397,10 +491,7 @@ export const Interview: FC = () => {
                 <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px' }}>Generating follow-up suggestions...</p>
               ) : (
                 context.suggestedQuestions.map((q) => (
-                  <div key={q.id} style={{ padding: '14px', borderRadius: '16px', border: '1px solid #e5e7eb', backgroundColor: '#f9fafb' }}>
-                    <p style={{ margin: 0, fontSize: '12px', color: '#475569' }}>{q.skill}</p>
-                    <p style={{ margin: '6px 0 0', fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>{q.text}</p>
-                  </div>
+                  <SuggestedQuestionItem key={q.id} question={q} />
                 ))
               )}
             </div>

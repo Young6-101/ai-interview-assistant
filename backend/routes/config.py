@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 import os
 
-router = APIRouter()
+router = APIRouter(prefix='/api/config')
 
-@router.get('/api/config/assemblyai')
+@router.get('/assemblyai')
 async def get_assemblyai_config():
     """Return AssemblyAI configuration for front-end usage.
     Prefer returning a short-lived token if available; otherwise return apiKey.
