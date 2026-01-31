@@ -74,8 +74,8 @@ async def save_interview(interview_id: str, request: SaveInterviewRequest):
             interview_sessions[interview_id]["end_time"] = datetime.now().isoformat()
             
             # Save to JSON file
-            filename = f"interviews/{interview_id}.json"
-            os.makedirs("interviews", exist_ok=True)
+            filename = f"../interviews/{interview_id}.json"
+            os.makedirs("../interviews", exist_ok=True)
             with open(filename, "w") as f:
                 json.dump(interview_sessions[interview_id], f, indent=2)
             
@@ -142,6 +142,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 # Create session
                 session_id = f"session_{int(time.time())}_{username}"
+                
                 async with state_lock:
                     interview_sessions[session_id] = {
                         "id": session_id,
@@ -189,7 +190,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         transcript_entry = {
                             "speaker": speaker,
                             "text": text,
-                            "timestamp": timestamp
+                            "timestamp": timestamp,
+                            "time": datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M:%S")  # ✅ 添加可读时间
                         }
                         interview_sessions[session_id]["transcripts"].append(transcript_entry)
                 
@@ -302,6 +304,22 @@ async def websocket_endpoint(websocket: WebSocket):
                         )
                         logger.info(f"💡 Generated {len(followups)} follow-up questions")
                         
+                        # ✅ 记录AI生成到session中（包含时间）
+                        async with state_lock:
+                            if session_id in interview_sessions:
+                                if "ai_generations" not in interview_sessions[session_id]:
+                                    interview_sessions[session_id]["ai_generations"] = []
+                                
+                                interview_sessions[session_id]["ai_generations"].append({
+                                    "timestamp": int(time.time() * 1000),
+                                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # ✅ 可读时间
+                                    "hr_question": last_hr_question,
+                                    "candidate_answer": last_candidate_answer,
+                                    "classification": last_classification,
+                                    "analysis": last_analysis,
+                                    "generated_questions": followups
+                                })
+                        
                         await websocket.send_json({
                             "type": "suggested_questions",
                             "session_id": session_id,
@@ -376,8 +394,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
                             
                             # Save to JSON file
-                            filename = f"interviews/{session_id}.json"
-                            os.makedirs("interviews", exist_ok=True)
+                            filename = f"../interviews/{session_id}.json"
+                            os.makedirs("../interviews", exist_ok=True)
                             with open(filename, "w") as f:
                                 json.dump(interview_sessions[session_id], f, indent=2)
                             
@@ -396,8 +414,8 @@ async def websocket_endpoint(websocket: WebSocket):
                 if session_id in interview_sessions:
                     interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
                     # Save on disconnect
-                    filename = f"interviews/{session_id}.json"
-                    os.makedirs("interviews", exist_ok=True)
+                    filename = f"../interviews/{session_id}.json"
+                    os.makedirs("../interviews", exist_ok=True)
                     with open(filename, "w") as f:
                         json.dump(interview_sessions[session_id], f, indent=2)
     
