@@ -1,8 +1,3 @@
-"""
-Simplified AI Interview Assistant Backend
-Main entry point - initializes FastAPI app and routers
-"""
-
 import os
 import logging
 from dotenv import load_dotenv
