@@ -12,6 +12,9 @@ build/
 .env
 .env.local
 
+# Interview records (sensitive data)
+interviews/
+
 # IDE
 .vscode/
 .idea/
