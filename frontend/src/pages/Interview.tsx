@@ -1,10 +1,16 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useInterview } from '../contexts/InterviewContext'
 import { useWebSocket } from '../hooks/useWebSocket'
 import { useMeetingRoom } from '../hooks/useMeetingRoom'
 import { useAudioCapture } from '../hooks/useAudioCapture'
 import '../App.css'
+
+const MODE_LABELS: Record<string, string> = {
+  mode1: 'Mode 1 · Guided',
+  mode2: 'Mode 2 · Open Q&A',
+  mode3: 'Mode 3 · Expert'
+}
 
 interface InterviewSetup {
   candidateName: string
@@ -15,45 +21,52 @@ interface InterviewSetup {
 export const Interview: React.FC = () => {
   const navigate = useNavigate()
   const context = useInterview()
-  const { isConnected, startInterview, pauseInterview, stopInterview } = useWebSocket()
+  const { isConnected, startInterview, pauseInterview, stopInterview, sendTranscript, disconnect } = useWebSocket()
   const { screenStream, isSharing, selectMeetingRoom, stopMeetingRoom, error: meetingRoomError } = useMeetingRoom()
-  const { startHrRecording, stopHrRecording, stopCandidateRecording } = useAudioCapture(
+  const handleTranscript = useCallback(
     (block) => {
-      // Add transcript to context
+      const speakerLabel = block.speaker === 'HR' ? 'HR' : 'CANDIDATE'
       context.addTranscript({
         id: block.id,
-        speaker: block.speaker,
+        speaker: speakerLabel,
         text: block.transcript,
         timestamp: block.timestamp,
         isFinal: true
       })
-    }
+      sendTranscript(speakerLabel, block.transcript, block.timestamp)
+    },
+    [context, sendTranscript]
   )
-  
+  const { startHrRecording, stopHrRecording, startCandidateRecording, stopCandidateRecording, setAssemblyAIToken } = useAudioCapture(handleTranscript)
+
+  const storedCandidateName = localStorage.getItem('candidate_name') ?? ''
+  const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
   const [setup, setSetup] = useState<InterviewSetup>({
-    candidateName: '',
+    candidateName: storedCandidateName,
     position: 'Software Engineer',
     duration: 60
   })
+  const modeLabel = MODE_LABELS[storedMode] || storedMode
   const [setupComplete, setSetupComplete] = useState(false)
   const [error, setError] = useState('')
+  const assemblyToken = import.meta.env.VITE_ASSEMBLYAI_API_KEY ?? import.meta.env.VITE_ASSEMBLY_API_KEY ?? ''
 
   // Check authentication
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) {
+    const registeredName = localStorage.getItem('candidate_name')
+    if (!registeredName) {
       navigate('/login')
     }
   }, [navigate])
 
-  // Configure AssemblyAI token when setup completes
   useEffect(() => {
-    if (setupComplete) {
-      // TODO: Get token from backend or environment
-      // For now, skip audio setup until token is available
-      console.log('Setup complete. Audio will be initialized when token is available.')
+    if (assemblyToken) {
+      setAssemblyAIToken(assemblyToken)
+      setError('')
+    } else if (setupComplete) {
+      setError('AssemblyAI API key is missing. Please set VITE_ASSEMBLYAI_API_KEY.')
     }
-  }, [setupComplete])
+  }, [assemblyToken, setAssemblyAIToken, setupComplete])
 
   const handleStartSetup = () => {
     if (!setup.candidateName.trim()) {
@@ -63,6 +76,22 @@ export const Interview: React.FC = () => {
     setError('')
     setSetupComplete(true)
   }
+
+  useEffect(() => {
+    if (!screenStream) {
+      stopCandidateRecording()
+      return
+    }
+
+    startCandidateRecording(screenStream).catch((err) => {
+      console.error('Candidate audio capture failed', err)
+      setError('Candidate audio capture failed: ' + (err?.message ?? 'Unknown error'))
+    })
+
+    return () => {
+      stopCandidateRecording()
+    }
+  }, [screenStream, startCandidateRecording, stopCandidateRecording])
 
   const handleStartInterview = () => {
     if (!isConnected) {
@@ -104,7 +133,15 @@ export const Interview: React.FC = () => {
   }
 
   const handleLogout = () => {
+    stopHrRecording()
+    stopCandidateRecording()
+    stopMeetingRoom()
+    disconnect()
     localStorage.removeItem('token')
+    localStorage.removeItem('candidate_name')
+    localStorage.removeItem('interview_mode')
+    localStorage.removeItem('candidate_id')
+    localStorage.removeItem('login_timestamp')
     navigate('/login')
   }
 
@@ -225,9 +262,9 @@ export const Interview: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <h2 style={{ margin: '0 0 4px 0' }}>Interview: {setup.candidateName}</h2>
-            <p style={{ margin: '0', fontSize: '14px', color: '#6b7280' }}>
-              Position: {setup.position}
-              {' | '}
+            <p style={{ margin: '0', fontSize: '14px', color: '#6b7280', display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+              <span>Position: {setup.position}</span>
+              <span style={{ color: '#0f172a', fontWeight: '600' }}>• Mode: {modeLabel}</span>
               <span style={{ color: isConnected ? '#10b981' : '#ef4444' }}>
                 {isConnected ? '🟢 Connected' : '🔴 Disconnected'}
               </span>

@@ -8,6 +8,9 @@ interface LoginResponse {
   access_token: string
   token_type: string
   mode: string
+  candidate_id: string
+  candidate_name: string
+  recorded_at: string
 }
 
 interface CurrentUserResponse {
@@ -50,7 +53,7 @@ const apiClient = axios.create({
 // Add token to requests
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token')
+    const token = localStorage.getItem('access_token') ?? localStorage.getItem('token')
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -65,6 +68,7 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       localStorage.removeItem('access_token')
+      localStorage.removeItem('token')
       window.location.href = '/login'
     }
     return Promise.reject(error)
@@ -74,8 +78,8 @@ apiClient.interceptors.response.use(
 // ============ Auth APIs ============
 
 export const authAPI = {
-  login: (username: string, password: string): Promise<LoginResponse> =>
-    apiClient.post('/auth/login', { username, password }),
+  login: (candidateName: string, mode: string): Promise<LoginResponse> =>
+    apiClient.post('/auth/login', { candidate_name: candidateName, mode }),
 
   register: (username: string, email: string, password: string, full_name?: string): Promise<{ id: string; username: string; email: string }> =>
     apiClient.post('/auth/register', {

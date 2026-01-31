@@ -1,53 +1,61 @@
 """Authentication routes"""
 
 import logging
+from datetime import datetime
+from uuid import uuid4
+from typing import Literal
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from utils.auth import USERS, generate_token, verify_token
+
+from core.state import login_records, state_lock
+from utils.auth import generate_token
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 class LoginRequest(BaseModel):
-    username: str
-    password: str
+    candidate_name: str
+    mode: Literal['mode1', 'mode2', 'mode3']
+
 
 class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str
+    candidate_id: str
+    candidate_name: str
     mode: str
+    recorded_at: str
+    access_token: str
+    token_type: str = 'Bearer'
 
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
-    """
-    Simple login endpoint
-    Returns token and mode
-    """
-    username = request.username.strip()
-    password = request.password.strip()
-    
-    logger.info(f"🔍 Login attempt - username: '{username}', password: '{password}'")
-    logger.info(f"🔍 USERS dict: {USERS}")
-    logger.info(f"🔍 Username in USERS: {username in USERS}")
-    if username in USERS:
-        logger.info(f"🔍 Password match: {USERS[username] == password} (stored: '{USERS[username]}', provided: '{password}')")
-    
-    # Verify credentials
-    if username not in USERS or USERS[username] != password:
+    """Record a candidate name and preferred mode for testing."""
+    candidate_name = request.candidate_name.strip()
+    if not candidate_name:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials"
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Candidate name cannot be empty"
         )
-    
-    # Generate token
-    token = generate_token(username)
-    mode = "mode1"  # Default mode
-    
-    logger.info(f"✅ User {username} logged in")
-    
+
+    mode = request.mode.lower()
+    candidate_id = f"candidate_{uuid4().hex[:8]}"
+    recorded_at = datetime.utcnow().isoformat()
+    token = generate_token(candidate_name)
+
+    async with state_lock:
+        login_records[candidate_id] = {
+            "candidate_name": candidate_name,
+            "mode": mode,
+            "recorded_at": recorded_at
+        }
+
+    logger.info(f"📝 Recorded candidate '{candidate_name}' with mode '{mode}'")
+
     return LoginResponse(
-        access_token=token,
-        token_type="Bearer",
-        mode=mode
+        candidate_id=candidate_id,
+        candidate_name=candidate_name,
+        mode=mode,
+        recorded_at=recorded_at,
+        access_token=token
     )
