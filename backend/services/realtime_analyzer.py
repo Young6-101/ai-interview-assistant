@@ -9,7 +9,6 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# 确保加载 .env 文件
 from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)

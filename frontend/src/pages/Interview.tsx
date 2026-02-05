@@ -75,12 +75,10 @@ export const Interview: FC = () => {
    */
   const handleTranscript = useCallback(
     (block: AudioBlock) => {
-      const speakerLabel = block.speaker === 'HR' ? 'HR' : 'CANDIDATE'
-      
-      // 1. Update Context for global state
+      // 1. Update Context for global state (keep original speaker value)
       contextRef.current.addTranscript({
         id: block.id,
-        speaker: speakerLabel,
+        speaker: block.speaker,
         text: block.transcript,
         timestamp: block.timestamp,
         isFinal: true
@@ -89,7 +87,7 @@ export const Interview: FC = () => {
       // 2. Forward to backend via WebSocket
       // The backend will broadcast it back, and useWebSocketOptimized 
       // will handle DOM updates via broadcast_update
-      sendTranscript(speakerLabel, block.transcript, block.timestamp)
+      sendTranscript(block.speaker, block.transcript, block.timestamp)
     },
     [sendTranscript]
   )
@@ -115,11 +113,10 @@ export const Interview: FC = () => {
   const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
   
   // AI Warning visibility logic based on mode
+  // Mode 3: always show warning
   useEffect(() => {
     if (storedMode === 'mode3') {
       setShowAIWarning(true)
-    } else {
-      setShowAIWarning(false)
     }
   }, [storedMode])
 
@@ -313,7 +310,7 @@ export const Interview: FC = () => {
     if (storedMode === 'mode2') {
       setShowAIWarning(true)
       // Hide after 10 seconds
-      setTimeout(() => setShowAIWarning(false), 10000)
+      setTimeout(() => setShowAIWarning(false), 2000)
     }
     
     try {
@@ -323,34 +320,6 @@ export const Interview: FC = () => {
     } catch (err) {
       setError('❌ Analysis request failed')
       setIsAnalyzing(false)
-    }
-  }
-
-  /**
-   * Handles re-selection of the meeting room.
-   * It explicitly stops existing tracks before requesting a new one 
-   * to prevent hardware/permission conflicts.
-   */
-  const handleReselectMeetingRoom = async () => {
-    setError('')
-    try {
-        // 1. Explicitly stop current tracks to free up the hardware
-        if (screenStream) {
-            screenStream.getTracks().forEach(track => track.stop())
-        }
-        
-        // 2. Reset states and stop internal audio logic
-        stopCandidateRecording()
-        stopMeetingRoom() // Resets the context stream to null
-        
-        // 3. Small delay to allow the browser to process the hardware release
-        await new Promise(resolve => setTimeout(resolve, 150))
-        
-        // 4. Trigger the selection dialog again
-        await handleSelectMeetingRoom()
-    } catch (err: any) {
-        console.error('Reselect failed:', err)
-        setError(err?.message || 'Failed to reselect meeting room')
     }
   }
 
@@ -464,20 +433,6 @@ export const Interview: FC = () => {
                   <div style={{ position: 'absolute', top: '12px', left: '12px', padding: '6px 10px', borderRadius: '999px', backgroundColor: 'rgba(15,23,42,0.8)', color: '#f8fafc', fontSize: '12px', fontWeight: 600 }}>
                     SHARING
                   </div>
-                  <div style={{ position: 'absolute', bottom: '12px', right: '12px', display: 'flex', gap: '8px' }}>
-                    <button
-                      onClick={stopMeetingRoom}
-                      style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      Stop
-                    </button>
-                    <button
-                      onClick={handleReselectMeetingRoom}
-                      style={{ padding: '8px 12px', borderRadius: '10px', border: 'none', backgroundColor: '#2563eb', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
-                    >
-                      Reselect
-                    </button>
-                  </div>
                 </div>
               ) : (
                 <div style={{ padding: '32px', textAlign: 'center', color: '#f8fafc' }}>
@@ -529,11 +484,12 @@ export const Interview: FC = () => {
 
         {/* 右侧面板 - Header、AI警告和问题 */}
         <div style={{ 
-          width: '50%',               // 右边一半宽度
+          width: '50%',              
           display: 'flex',
           flexDirection: 'column',
           height: '100vh',
-          background: 'linear-gradient(180deg, #0f172a, #1f2a44)'
+          background: 'linear-gradient(180deg, #0f172a, #1f2a44)',
+          position: 'relative'
         }}>
           {/* Header信息 */}
           <header style={{ 
@@ -543,7 +499,7 @@ export const Interview: FC = () => {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '32px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Guided' : storedMode === 'mode2' ? 'Open Q&A' : 'Expert'}</span>
+                <span style={{ fontSize: '14px', color: '#cbd5f5' }}>{storedMode === 'mode1' ? 'Mode 1' : storedMode === 'mode2' ? 'Mode 2' : 'Mode 3'}</span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 {/* Status indicator */}
@@ -566,37 +522,22 @@ export const Interview: FC = () => {
               {error}
             </div>
           )}
-          
-          {/* AI Warning Banner */}
-          {showAIWarning && (
-            <div style={{
-              margin: '16px 32px 0',
-              padding: '16px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
-              color: '#92400e',
-              fontSize: '14px',
-              fontWeight: 600,
-              textAlign: 'center',
-              border: '2px solid #fcd34d',
-              boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
-              animation: storedMode === 'mode2' ? 'pulse 2s ease-in-out infinite' : 'none'
-            }}>
-              ⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW
-            </div>
-          )}
 
           {/* Suggestions Sidebar */}
           <aside style={{ 
+            position: 'absolute',
+            top: '50%',
+            left: '32px',
+            right: '32px',
+            transform: 'translateY(-50%)',
+            height: 'calc(100vh - 200px)',
             backgroundColor: 'white', 
             borderRadius: '16px', 
-            margin: '24px 32px',
             padding: '20px', 
             boxShadow: '0 25px 60px rgba(15,23,42,0.25)', 
             display: 'flex', 
             flexDirection: 'column', 
             gap: '12px', 
-            flex: 1,          
             overflow: 'hidden'       
           }}>
             {/* Title always visible */}
@@ -638,6 +579,27 @@ export const Interview: FC = () => {
                 </>
               )}
             </button>
+            
+            {/* AI Warning Banner */}
+            {showAIWarning && (
+              <div style={{
+                padding: '12px 14px',
+                borderRadius: '12px',
+                background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+                color: '#92400e',
+                fontSize: '13px',
+                fontWeight: 600,
+                textAlign: 'center',
+                border: '2px solid #fcd34d',
+                boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
+                animation: storedMode === 'mode2' ? 'pulse 2s ease-in-out infinite' : 'none'
+              }}>
+                <div>⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW</div>
+                {storedMode === 'mode2' && (
+                  <div style={{ fontSize: '11px', marginTop: '6px', opacity: 0.85 }}>(This message will automatically disappear in 2 seconds)</div>
+                )}
+              </div>
+            )}
             
             {/* Questions List */}
             <div style={{ 

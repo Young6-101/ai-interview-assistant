@@ -17,6 +17,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 class LoginRequest(BaseModel):
     candidate_name: str
+    password: str
     mode: Literal['mode1', 'mode2', 'mode3']
 
 
@@ -31,11 +32,18 @@ class LoginResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(request: LoginRequest):
     """Record a candidate name and preferred mode for testing."""
+    COMMON_PASSWORD = "nus2026"
     candidate_name = request.candidate_name.strip()
     if not candidate_name:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Candidate name cannot be empty"
+        )
+
+    if request.password != COMMON_PASSWORD:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid password"
         )
 
     mode = request.mode.lower()

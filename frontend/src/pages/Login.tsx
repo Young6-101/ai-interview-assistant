@@ -2,9 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const modeOptions = [
-  { value: 'mode1', label: 'Mode 1 · Standard', description: 'Normal interview mode without AI notifications.' },
-  { value: 'mode2', label: 'Mode 2 · Transparent', description: 'Shows AI warning for 10 seconds when generating questions.' },
-  { value: 'mode3', label: 'Mode 3 · Full Disclosure', description: 'Continuously displays AI usage warning to candidate.' }
+  { value: 'mode1' },
+  { value: 'mode2' },
+  { value: 'mode3'}
 ] as const
 
 type ModeOption = (typeof modeOptions)[number]['value']
@@ -15,9 +15,12 @@ const generateToken = (username: string): string => {
   return btoa(payload)
 }
 
+const COMMON_PASSWORD = 'nus2026' // PASSWORD
+
 export const Login = () => {
   const navigate = useNavigate()
   const [candidateName, setCandidateName] = useState('')
+  const [password, setPassword] = useState('')
   const [mode, setMode] = useState<ModeOption>('mode1')
   const [error, setError] = useState('')
 
@@ -26,6 +29,10 @@ export const Login = () => {
     const trimmedName = candidateName.trim()
     if (!trimmedName) {
       setError('Please share your name to continue.')
+      return
+    }
+    if (password !== COMMON_PASSWORD) {
+      setError('Invalid password.')
       return
     }
 
@@ -43,7 +50,7 @@ export const Login = () => {
   return (
     <div
       style={{
-        position: 'fixed',          // ✅ 固定定位，防止滚动
+        position: 'fixed',          
         top: 0,                     // ✅ 覆盖整个视窗
         left: 0,                    // ✅ 覆盖整个视窗  
         width: '100vw',             // ✅ 填充整个宽度
@@ -117,6 +124,26 @@ export const Login = () => {
           </div>
 
           <div>
+            <label style={{ display: 'block', fontWeight: '600', color: '#0f172a', marginBottom: '6px' }}>
+              Password
+            </label>
+            <input
+              type='password'
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder='Enter password'
+              style={{
+                width: '100%',
+                padding: '12px',
+                borderRadius: '8px',
+                border: '1px solid #cbd5f5',
+                fontSize: '15px',
+                backgroundColor: '#f8fafc'
+              }}
+            />
+          </div>
+
+          <div>
             <label style={{ display: 'block', fontWeight: '600', color: '#0f172a', marginBottom: '10px' }}>
               Choose a mode
             </label>
@@ -129,21 +156,17 @@ export const Login = () => {
                     type='button'
                     onClick={() => setMode(option.value)}
                     style={{
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'flex-start',
                       padding: '14px',
                       borderRadius: '10px',
                       border: isSelected ? '2px solid #2563eb' : '1px solid #e2e8f0',
                       backgroundColor: isSelected ? '#1d4ed8' : '#f8fafc',
                       color: isSelected ? '#ffffff' : '#0f172a',
-                      cursor: 'pointer'
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      fontSize: '15px'
                     }}
                   >
-                    <span style={{ fontWeight: '600', fontSize: '15px' }}>{option.label}</span>
-                    <span style={{ fontSize: '13px', color: isSelected ? '#bfdbfe' : '#475569', marginTop: '4px' }}>
-                      {option.description}
-                    </span>
+                    {option.value}
                   </button>
                 )
               })}

@@ -6,7 +6,6 @@ export interface UseMeetingRoomReturn {
   error: string | null
   selectMeetingRoom: () => Promise<void>
   stopMeetingRoom: () => void
-  reselectMeetingRoom: () => Promise<void>
 }
 
 /**
@@ -82,20 +81,6 @@ export const useMeetingRoom = (): UseMeetingRoomReturn => {
   }, [stopMeetingRoom])
 
   /**
-   * Properly restarts the meeting room capture.
-   * Includes a small delay to ensure hardware is released.
-   */
-  const reselectMeetingRoom = useCallback(async () => {
-    console.log('Restarting meeting room selection...')
-    stopMeetingRoom()
-    
-    // Give the browser 150ms to release the previous stream hardware
-    await new Promise(resolve => setTimeout(resolve, 150))
-    
-    await selectMeetingRoom()
-  }, [selectMeetingRoom, stopMeetingRoom])
-
-  /**
    * Cleanup: Ensure tracks are stopped if the component is unmounted
    */
   useEffect(() => {
@@ -111,7 +96,6 @@ export const useMeetingRoom = (): UseMeetingRoomReturn => {
     isSharing,
     error,
     selectMeetingRoom,
-    stopMeetingRoom,
-    reselectMeetingRoom
+    stopMeetingRoom
   }
 }

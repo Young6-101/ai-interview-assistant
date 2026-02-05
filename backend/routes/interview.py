@@ -12,6 +12,7 @@ from utils.auth import verify_token
 from utils.broadcast import broadcast_update
 from core.state import interview_sessions, active_websockets, state_lock
 from services.realtime_analyzer import RealtimeAnalyzer
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +47,14 @@ async def create_interview(request: CreateInterviewRequest):
             "status": "created",
             "start_time": datetime.now().isoformat(),
             "transcripts": [],
-            "weak_points": []
+            "weak_points": [],
+
+            "utterance_buffer":{
+                "current_speaker": None,
+                "current_text": "",
+                "current_start_timestamp": None,
+                "last_activity_time": time
+            }
         }
     
     logger.info(f"✨ Interview created: {interview_id}")
@@ -84,6 +92,56 @@ async def save_interview(interview_id: str, request: SaveInterviewRequest):
             return {"message": "Interview saved successfully"}
     
     return {"error": "Interview not found"}
+
+# ============ HELPER FUNCTIONS ============
+
+async def commit_buffer(session_id: str, session: dict, buffer: dict):
+    """Commit the current utterance buffer to transcripts and trigger analysis"""
+    if not buffer["current_text"]:
+        return
+
+    full_text = buffer["current_text"].strip()
+    entry = {
+        "speaker": buffer["current_speaker"],
+        "text": full_text,
+        "timestamp": buffer["current_start_timestamp"],
+        "time": datetime.fromtimestamp(buffer["current_start_timestamp"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    # 存入 transcripts
+    session["transcripts"].append(entry)
+
+    logger.info(f"📝 COMMIT {buffer['current_speaker'].upper()}: {full_text[:50]}...")
+
+    # 推送完整 utterance 给前端（不再碎）
+    await broadcast_update({
+        "type": "new_transcript",
+        "session_id": session_id,
+        "payload": entry
+    })
+
+    # 根据 speaker 自动分析（现在 text 是完整的）
+    analyzer = RealtimeAnalyzer()
+
+    if buffer["current_speaker"] == "hr":
+        classification = await analyzer.classify_question(full_text)
+        logger.info(f"🎯 HR Question: {classification.get('question_type')}")
+        session["last_hr_question"] = full_text
+        session["last_classification"] = classification
+
+    elif buffer["current_speaker"] == "candidate":
+        last_q = session.get("last_hr_question")
+        if last_q:
+            analysis = await analyzer.analyze_answer(last_q, full_text, "star")
+            logger.info(f"📊 Answer score: {analysis.get('quality_score')}")
+            session["last_candidate_answer"] = full_text
+            session["last_analysis"] = analysis
+            # 可选：自动加到 weak_points 或触发 suggested_questions
+
+    # 清空 buffer
+    buffer["current_speaker"] = None
+    buffer["current_text"] = ""
+    buffer["current_start_timestamp"] = None
 
 # ============ WEBSOCKET ENDPOINT ============
 
@@ -150,7 +208,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         "mode": mode,
                         "start_time": datetime.now().isoformat(),
                         "transcripts": [],
-                        "weak_points": []
+                        "weak_points": [],
+                        "utterance_buffer": {
+                            "current_speaker": None,
+                            "current_text": "",
+                            "current_start_timestamp": None,
+                            "last_activity_time": time.time()
+                        }
                     }
                 
                 logger.info(f"✨ Interview started: {session_id} (mode: {mode})")
@@ -167,81 +231,45 @@ async def websocket_endpoint(websocket: WebSocket):
             # ===== NEW TRANSCRIPT =====
             elif message_type == "transcript":
                 if not session_id:
-                    try:
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "No active session"
-                        })
-                    except Exception:
-                        pass
+                    await websocket.send_json({"type": "error", "message": "No active session"})
                     continue
-                
+
                 payload = data.get("payload", {})
                 speaker = payload.get("speaker", "").lower()
-                text = payload.get("text", "")
+                text = payload.get("text", "").strip()
                 timestamp = payload.get("timestamp", time.time())
-                
-                if not text.strip() or speaker not in ["hr", "candidate"]:
+
+                if not text or speaker not in ["hr", "candidate"]:
                     continue
-                
-                # Store transcript
+
+                # ✅ 不在这里广播，让buffer处理后再广播，避免重复
+
                 async with state_lock:
-                    if session_id in interview_sessions:
-                        transcript_entry = {
-                            "speaker": speaker,
-                            "text": text,
-                            "timestamp": timestamp,
-                            "time": datetime.fromtimestamp(timestamp / 1000).strftime("%Y-%m-%d %H:%M:%S")  # ✅ 添加可读时间
-                        }
-                        interview_sessions[session_id]["transcripts"].append(transcript_entry)
-                
-                logger.info(f"📝 {speaker.upper()}: {text[:50]}...")
-                
-                # Broadcast to all clients
-                await broadcast_update({
-                    "type": "new_transcript",
-                    "session_id": session_id,
-                    "payload": {
-                        "speaker": speaker,
-                        "text": text,
-                        "timestamp": timestamp
-                    }
-                })
-                
-                # ===== AUTO ANALYSIS (Background) =====
-                try:
-                    analyzer = RealtimeAnalyzer()
-                    
-                    if speaker == "hr":
-                        # Auto classify HR question and cache
-                        classification = await analyzer.classify_question(text)
-                        logger.info(f"🎯 [Auto] HR Question Classified: {classification.get('question_type')}")
-                        
-                        async with state_lock:
-                            if session_id in interview_sessions:
-                                interview_sessions[session_id]["last_hr_question"] = text
-                                interview_sessions[session_id]["last_classification"] = classification
-                    
-                    elif speaker == "candidate":
-                        # Get last HR question from cache
-                        last_hr_question = None
-                        async with state_lock:
-                            if session_id in interview_sessions:
-                                last_hr_question = interview_sessions[session_id].get("last_hr_question")
-                        
-                        if last_hr_question:
-                            # Auto analyze answer and cache
-                            analysis = await analyzer.analyze_answer(last_hr_question, text, "star")
-                            logger.info(f"📊 [Auto] Answer analyzed, score: {analysis.get('quality_score')}")
-                            
-                            async with state_lock:
-                                if session_id in interview_sessions:
-                                    interview_sessions[session_id]["last_candidate_answer"] = text
-                                    interview_sessions[session_id]["last_analysis"] = analysis
-                
-                except Exception as e:
-                    logger.error(f"❌ Auto analysis error: {e}")
-            
+                    session = interview_sessions[session_id]
+                    buffer = session["utterance_buffer"]
+
+                    current_time = time.time()
+
+                    # 如果之前commit过，就不要重复commit
+                    if buffer["current_speaker"] is None:
+                        # Buffer已经清空，这是新的一个block
+                        buffer["current_speaker"] = speaker
+                        buffer["current_text"] = text
+                        buffer["current_start_timestamp"] = timestamp
+                    elif speaker != buffer["current_speaker"]:
+                        # speaker 切换 → 先 commit 上一个
+                        if buffer["current_text"]:
+                            await commit_buffer(session_id, session, buffer)
+                        # 重置 buffer for new speaker
+                        buffer["current_speaker"] = speaker
+                        buffer["current_text"] = text
+                        buffer["current_start_timestamp"] = timestamp
+                    else:
+                        # 同 speaker → 累积
+                        buffer["current_text"] += " " + text
+
+                    buffer["last_activity_time"] = current_time
+
             # ===== MANUAL AI ANALYSIS REQUEST =====
             elif message_type == "request_analysis":
                 if not session_id:

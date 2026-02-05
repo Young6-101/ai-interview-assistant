@@ -92,7 +92,7 @@ export const useWebSocketOptimized = () => {
         // ✅ New element: create DOM node - speaker and content in one line
         const div = document.createElement('div')
         div.id = `transcript-${payload.id}`
-        div.className = `transcript-item ${payload.speaker === 'HR' ? 'hr' : 'candidate'}`
+        div.className = `transcript-item ${payload.speaker === 'HR' ? 'recruiter' : 'candidate'}`
         div.style.cssText = `
           padding: 8px 12px;
           margin-bottom: 4px;
@@ -107,7 +107,7 @@ export const useWebSocketOptimized = () => {
           font-weight: 600;
           color: ${payload.speaker === 'HR' ? '#3b82f6' : '#10b981'};
         `
-        speakerSpan.textContent = payload.speaker
+        speakerSpan.textContent = payload.speaker === 'HR' ? 'RECRUITER' : payload.speaker
 
         const colonSpan = document.createElement('span')
         colonSpan.style.cssText = 'color: #6b7280;'
@@ -115,6 +115,7 @@ export const useWebSocketOptimized = () => {
 
         // 对话内容（深灰）
         const textSpan = document.createElement('span')
+        textSpan.className = 'transcript-text'
         textSpan.style.cssText = 'color: #374151;'
         textSpan.textContent = payload.text
 
@@ -168,7 +169,7 @@ export const useWebSocketOptimized = () => {
   )
 
   /**
-   * ✅ MAIN OPTIMIZATION: Message handler with partial update support
+   * Message handler with partial update support
    */
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
@@ -217,6 +218,7 @@ export const useWebSocketOptimized = () => {
         case 'new_transcript':
         case 'transcript_update': {
           const payload = data.payload || data
+          console.log('📝 Received transcript:', payload) // 调试日志
           upsertTranscriptDOM({
             id: payload.id || `${Date.now()}`,
             speaker: (payload.speaker || 'UNKNOWN').toUpperCase() as 'HR' | 'CANDIDATE',
