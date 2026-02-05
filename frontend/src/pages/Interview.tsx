@@ -44,7 +44,7 @@ export const Interview: FC = () => {
    * 1. Initialize custom hooks.
    * Now using the optimized useWebSocketOptimized that handles DOM updates directly
    */
-  const { isConnected, connect, startInterview, stopInterview, sendTranscript, requestAnalysis, disconnect, setTranscriptContainer } = useWebSocketOptimized()
+  const { isConnected, connect, startInterview, stopInterview, sendTranscript, sendPartialTranscript, requestAnalysis, disconnect, setTranscriptContainer } = useWebSocketOptimized()
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const { screenStream, isSharing, selectMeetingRoom, stopMeetingRoom } = useMeetingRoom()
 
@@ -69,7 +69,7 @@ export const Interview: FC = () => {
   }, [setTranscriptContainer])
 
   /**
-   * 3. Stable Transcript Handler.
+   * 3. Stable Transcript Handler (Final transcripts).
    * This function is passed to useAudioCapture. It must remain stable (same reference) 
    * so the microphone doesn't stop/start every time the component re-renders.
    */
@@ -93,6 +93,18 @@ export const Interview: FC = () => {
   )
 
   /**
+   * 3.5 Partial Transcript Handler (Real-time updates).
+   * Updates DOM directly for instant feedback while user is speaking.
+   */
+  const handlePartialTranscript = useCallback(
+    (partial: { id: string; speaker: 'HR' | 'CANDIDATE'; text: string; timestamp: number }) => {
+      // Update DOM directly for real-time display
+      sendPartialTranscript(partial.id, partial.speaker, partial.text, partial.timestamp)
+    },
+    [sendPartialTranscript]
+  )
+
+  /**
    * 4. Initialize Audio Capture logic.
    */
   const { 
@@ -101,7 +113,7 @@ export const Interview: FC = () => {
     startCandidateRecording, 
     stopCandidateRecording, 
     setAssemblyAIToken 
-  } = useAudioCapture(handleTranscript)
+  } = useAudioCapture(handleTranscript, handlePartialTranscript)
 
   // 5. Local UI States
   const [error, setError] = useState('')

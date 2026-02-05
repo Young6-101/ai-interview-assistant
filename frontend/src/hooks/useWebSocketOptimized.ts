@@ -75,12 +75,10 @@ export const useWebSocketOptimized = () => {
       const existingElement = document.getElementById(`transcript-${payload.id}`)
 
       if (existingElement) {
-        // ✅ Element exists: only update text content
+        // ✅ Element exists: only update text content (no speaker prefix - already shown separately)
         const textNode = existingElement.querySelector('.transcript-text')
         if (textNode) {
-          // Update with full text format: "SPEAKER: content"
-          const fullText = `${payload.speaker}: ${payload.text}`
-          textNode.textContent = fullText
+          textNode.textContent = payload.text
         }
 
         if (payload.isFinal) {
@@ -169,6 +167,28 @@ export const useWebSocketOptimized = () => {
   )
 
   /**
+   * Send partial transcript for real-time display
+   * This updates the UI immediately without storing in backend
+   */
+  const sendPartialTranscript = useCallback(
+    (id: string, speaker: string, text: string, timestamp?: number) => {
+      if (!text?.trim()) return false
+      
+      // ✅ Update DOM directly for instant feedback (no round-trip to backend)
+      upsertTranscriptDOM({
+        id,
+        speaker: speaker.toUpperCase() as 'HR' | 'CANDIDATE',
+        text,
+        timestamp: timestamp ?? Date.now(),
+        isFinal: false
+      })
+      
+      return true
+    },
+    [upsertTranscriptDOM]
+  )
+
+  /**
    * Message handler with partial update support
    */
   const handleMessage = useCallback((event: MessageEvent) => {
@@ -214,24 +234,50 @@ export const useWebSocketOptimized = () => {
 
         /**
          * ✅ Final transcript - update DOM and Context
+         * Skip if we already have this transcript (to avoid duplicates from broadcast)
          */
         case 'new_transcript':
         case 'transcript_update': {
           const payload = data.payload || data
-          console.log('📝 Received transcript:', payload) // 调试日志
+          const speaker = (payload.speaker || 'UNKNOWN').toUpperCase() as 'HR' | 'CANDIDATE'
+          const text = payload.text || payload.transcript || ''
+          const timestamp = payload.timestamp || Date.now()
+          
+          // Check if we already displayed this transcript via partial updates
+          // by looking for existing elements with same speaker that have similar text
+          const container = transcriptContainerRef.current
+          if (container) {
+            const existingItems = container.querySelectorAll(`.transcript-item.${speaker === 'HR' ? 'recruiter' : 'candidate'}`)
+            const lastItem = existingItems[existingItems.length - 1]
+            if (lastItem) {
+              const existingText = lastItem.querySelector('.transcript-text')?.textContent || ''
+              // If existing text matches or is substring of new text, just mark as final
+              if (existingText === text || text.includes(existingText)) {
+                console.log('📝 Skipping duplicate transcript, marking existing as final')
+                lastItem.classList.remove('speaking')
+                lastItem.classList.add('final')
+                // Update text if needed (in case partial was incomplete)
+                const textNode = lastItem.querySelector('.transcript-text')
+                if (textNode) textNode.textContent = text
+                break
+              }
+            }
+          }
+          
+          console.log('📝 Received new transcript:', payload)
           upsertTranscriptDOM({
-            id: payload.id || `${Date.now()}`,
-            speaker: (payload.speaker || 'UNKNOWN').toUpperCase() as 'HR' | 'CANDIDATE',
-            text: payload.text || payload.transcript || '',
-            timestamp: payload.timestamp || Date.now(),
+            id: payload.id || `backend_${Date.now()}`,
+            speaker,
+            text,
+            timestamp,
             isFinal: true
           })
           // Also sync to Context for any components that might need it
           contextRef.current.addTranscript({
-            id: payload.id || `${Date.now()}`,
-            speaker: (payload.speaker || 'UNKNOWN').toUpperCase() as 'HR' | 'CANDIDATE',
-            text: payload.text || payload.transcript || '',
-            timestamp: payload.timestamp || Date.now(),
+            id: payload.id || `backend_${Date.now()}`,
+            speaker,
+            text,
+            timestamp,
             isFinal: true
           })
           break
@@ -371,6 +417,7 @@ export const useWebSocketOptimized = () => {
     connect,
     send,
     sendTranscript,
+    sendPartialTranscript,
     requestAnalysis,
     startInterview: useCallback(() => {
       const token = localStorage.getItem('token') || localStorage.getItem('access_token')

@@ -7,6 +7,13 @@ export interface AudioBlock {
   timestamp: number
 }
 
+export interface PartialTranscript {
+  id: string
+  speaker: 'HR' | 'CANDIDATE'
+  text: string
+  timestamp: number
+}
+
 interface UseAudioCaptureReturn {
   isRecording: boolean
   error: string | null
@@ -26,8 +33,12 @@ interface UseAudioCaptureReturn {
  * - AssemblyAI real-time transcription
  * - Block-based transcript (3-second silence = new block)
  * - Dual HR + Candidate audio streams
+ * - Real-time partial updates for live display
  */
-export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): UseAudioCaptureReturn => {
+export const useAudioCapture = (
+  onTranscript?: (block: AudioBlock) => void,
+  onPartialTranscript?: (partial: PartialTranscript) => void
+): UseAudioCaptureReturn => {
   const [isRecording, setIsRecording] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -52,6 +63,16 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
   // Configuration
   const assemblyAITokenRef = useRef<string>('')
   const lastBlockTimeRef = useRef<number>(0)
+
+  // ✅ Use refs to store callbacks to avoid stale closure issues in WebSocket handlers
+  const onTranscriptRef = useRef(onTranscript)
+  const onPartialTranscriptRef = useRef(onPartialTranscript)
+  
+  // Keep refs updated
+  useEffect(() => {
+    onTranscriptRef.current = onTranscript
+    onPartialTranscriptRef.current = onPartialTranscript
+  }, [onTranscript, onPartialTranscript])
 
   const setAssemblyAIToken = useCallback((token: string) => {
     assemblyAITokenRef.current = token
@@ -254,16 +275,23 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
         const activeText = Object.values(hrMicRef.current.activeTurns || {}).join(' ')
         const displayTranscript = (hrBlockTranscriptRef.current + ' ' + activeText).trim()
 
-        // ✅ Only send to backend when turn is formatted (finalized)
+        // ✅ Send partial updates for real-time display (every message)
+        if (displayTranscript && onPartialTranscriptRef.current) {
+          onPartialTranscriptRef.current({
+            id: hrBlockIdRef.current,
+            speaker: 'HR',
+            text: displayTranscript,
+            timestamp: now
+          })
+        }
+
+        // ✅ Send final transcript when turn is formatted (finalized)
         if (end_of_turn && turn_is_formatted && displayTranscript && !hrBlockSentRef.current) {
           hrBlockSentRef.current = true
           
-          // Commit the finalized text
-          hrBlockTranscriptRef.current = displayTranscript
-          
           // Send only once per turn
-          if (onTranscript) {
-            onTranscript({
+          if (onTranscriptRef.current) {
+            onTranscriptRef.current({
               id: hrBlockIdRef.current,
               speaker: 'HR',
               transcript: displayTranscript,
@@ -271,8 +299,9 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
             })
           }
 
-          // Reset for next turn
+          // Reset for next turn - clear accumulated text to prevent duplication
           hrMicRef.current.activeTurns = {}
+          hrBlockTranscriptRef.current = ''  // ✅ Clear accumulated text
           hrBlockIdRef.current = `turn_${Date.now()}`
           hrBlockSentRef.current = false
         }
@@ -289,7 +318,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
       console.error(msg, err)
       setError(msg)
     }
-  }, [createMicrophone, onTranscript])
+  }, [createMicrophone])
 
   const stopHrRecording = useCallback(() => {
     // 1. Stop microphone FIRST to prevent more audio from being captured
@@ -317,8 +346,8 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
     }
 
     // 4. Send final block if exists
-    if (hrBlockTranscriptRef.current.trim() && onTranscript) {
-      onTranscript({
+    if (hrBlockTranscriptRef.current.trim() && onTranscriptRef.current) {
+      onTranscriptRef.current({
         id: hrBlockIdRef.current,
         speaker: 'HR',
         transcript: hrBlockTranscriptRef.current,
@@ -327,7 +356,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
     }
 
     console.log('✅ HR audio capture stopped')
-  }, [onTranscript])
+  }, [])
 
   const startCandidateRecording = useCallback(
     async (screenStream: MediaStream) => {
@@ -386,16 +415,23 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
           const activeText = Object.values(candidateMicRef.current.activeTurns || {}).join(' ')
           const displayTranscript = (candidateBlockTranscriptRef.current + ' ' + activeText).trim()
 
-          // ✅ Only send to backend when turn is formatted (finalized)
+          // ✅ Send partial updates for real-time display (every message)
+          if (displayTranscript && onPartialTranscriptRef.current) {
+            onPartialTranscriptRef.current({
+              id: candidateBlockIdRef.current,
+              speaker: 'CANDIDATE',
+              text: displayTranscript,
+              timestamp: now
+            })
+          }
+
+          // ✅ Send final transcript when turn is formatted (finalized)
           if (end_of_turn && turn_is_formatted && displayTranscript && !candidateBlockSentRef.current) {
             candidateBlockSentRef.current = true
             
-            // Commit the finalized text
-            candidateBlockTranscriptRef.current = displayTranscript
-            
             // Send only once per turn
-            if (onTranscript) {
-              onTranscript({
+            if (onTranscriptRef.current) {
+              onTranscriptRef.current({
                 id: candidateBlockIdRef.current,
                 speaker: 'CANDIDATE',
                 transcript: displayTranscript,
@@ -403,8 +439,9 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
               })
             }
 
-            // Reset for next turn
+            // Reset for next turn - clear accumulated text to prevent duplication
             candidateMicRef.current.activeTurns = {}
+            candidateBlockTranscriptRef.current = ''  // ✅ Clear accumulated text
             candidateBlockIdRef.current = `turn_${Date.now()}`
             candidateBlockSentRef.current = false
           }
@@ -417,7 +454,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
         setError(msg)
       }
     },
-    [createCandidateMicrophone, onTranscript]
+    [createCandidateMicrophone]
   )
 
   const stopCandidateRecording = useCallback(() => {
@@ -446,8 +483,8 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
     }
 
     // 4. Send final block if exists
-    if (candidateBlockTranscriptRef.current.trim() && onTranscript) {
-      onTranscript({
+    if (candidateBlockTranscriptRef.current.trim() && onTranscriptRef.current) {
+      onTranscriptRef.current({
         id: candidateBlockIdRef.current,
         speaker: 'CANDIDATE',
         transcript: candidateBlockTranscriptRef.current,
@@ -456,7 +493,7 @@ export const useAudioCapture = (onTranscript?: (block: AudioBlock) => void): Use
     }
 
     console.log('✅ Candidate audio capture stopped')
-  }, [onTranscript])
+  }, [])
 
   // Cleanup on unmount
   useEffect(() => {

@@ -275,10 +275,19 @@ async def websocket_endpoint(websocket: WebSocket):
                 if not session_id:
                     continue
                 
-                logger.info("🤖 Manual AI analysis requested - using cached results")
+                logger.info("🤖 Manual AI analysis requested")
                 
                 try:
-                    # Get cached results
+                    # ✅ First, commit any pending buffer content before analysis
+                    async with state_lock:
+                        if session_id in interview_sessions:
+                            session = interview_sessions[session_id]
+                            buffer = session["utterance_buffer"]
+                            if buffer["current_text"]:
+                                await commit_buffer(session_id, session, buffer)
+                                logger.info("📝 Committed buffer before analysis")
+                    
+                    # Get cached results (now up-to-date after commit)
                     last_hr_question = None
                     last_candidate_answer = None
                     last_classification = None
