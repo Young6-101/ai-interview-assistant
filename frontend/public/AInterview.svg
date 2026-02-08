@@ -1,0 +1,16 @@
+<svg width="64" height="64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#1D4ED8"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- blue dialog -->
+  <path d="M52,16 L16,16 Q8,16 8,24 L8,40 Q8,48 16,48 L24,48 L32,56 L32,48 L52,48 Q60,48 60,40 L60,24 Q60,16 52,16 Z" 
+        fill="url(#blueGradient)"/>
+
+      <!-- white dialog -->
+  <path d="M32,8 L56,8 Q60,8 60,12 L60,28 Q60,32 56,32 L48,32 L40,40 L40,32 L32,32 Q28,32 28,28 L28,12 Q28,8 32,8 Z" 
+        fill="#FFFFFF" stroke="#3B82F6" stroke-width="1"/>
+  </svg>
