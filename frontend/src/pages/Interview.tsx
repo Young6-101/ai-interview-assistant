@@ -121,6 +121,7 @@ export const Interview: FC = () => {
   const [isSelecting, setIsSelecting] = useState(false)
   const [isStarting, setIsStarting] = useState(false)
   const [showAIWarning, setShowAIWarning] = useState(false)
+  const [showEndConfirmPopup, setShowEndConfirmPopup] = useState(false)
   
   const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
   
@@ -322,7 +323,7 @@ export const Interview: FC = () => {
     if (storedMode === 'mode2') {
       setShowAIWarning(true)
       // Hide after 10 seconds
-      setTimeout(() => setShowAIWarning(false), 2000)
+      setTimeout(() => setShowAIWarning(false), 5000)
     }
     
     try {
@@ -335,7 +336,13 @@ export const Interview: FC = () => {
     }
   }
 
-  const handleStopInterview = () => {
+  // Show confirmation popup when clicking End Interview
+  const handleEndInterviewClick = () => {
+    setShowEndConfirmPopup(true)
+  }
+
+  // Actually stop the interview after confirmation
+  const handleConfirmEndInterview = () => {
     if (stopInterview()) {
       context.setInterviewState('ENDED')
       // Stop all audio capture
@@ -345,7 +352,18 @@ export const Interview: FC = () => {
       // Reset mic states
       setHrMicOn(false)
       setError('')
+      setShowEndConfirmPopup(false)
+      // Navigate to login page after a brief delay to allow JSON generation
+      setTimeout(() => {
+        localStorage.clear()
+        navigate('/login')
+      }, 500)
     }
+  }
+
+  // Cancel ending the interview
+  const handleCancelEndInterview = () => {
+    setShowEndConfirmPopup(false)
   }
 
   const handleLogout = () => {
@@ -403,7 +421,7 @@ export const Interview: FC = () => {
                   onClick={hrMicOn ? handleStopHrMic : handleStartHrMic}
                   style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: hrMicOn ? '#dc2626' : '#10b981', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
                 >
-                  {hrMicOn ? 'Stop HR Mic' : 'Start HR Mic'}
+                  {hrMicOn ? 'Stop Your Mic' : 'Start Your Mic'}
                 </button>
                 {context.interviewState === 'NOT_STARTED' && (
                   <button
@@ -416,7 +434,7 @@ export const Interview: FC = () => {
                 )}
                 {context.interviewState === 'RUNNING' && (
                   <button
-                    onClick={handleStopInterview}
+                    onClick={handleEndInterviewClick}
                     style={{ padding: '10px 16px', borderRadius: '12px', border: 'none', backgroundColor: '#ef4444', color: '#fff', fontWeight: 600, cursor: 'pointer' }}
                   >
                     End Interview
@@ -604,11 +622,11 @@ export const Interview: FC = () => {
                 textAlign: 'center',
                 border: '2px solid #fcd34d',
                 boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
-                animation: storedMode === 'mode2' ? 'pulse 2s ease-in-out infinite' : 'none'
+                animation: storedMode === 'mode2' ? 'pulse 5s ease-in-out infinite' : 'none'
               }}>
                 <div>⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW</div>
                 {storedMode === 'mode2' && (
-                  <div style={{ fontSize: '11px', marginTop: '6px', opacity: 0.85 }}>(This message will automatically disappear in 2 seconds)</div>
+                  <div style={{ fontSize: '11px', marginTop: '6px', opacity: 0.85 }}>(This message will automatically disappear in 5 seconds)</div>
                 )}
               </div>
             )}
@@ -633,6 +651,81 @@ export const Interview: FC = () => {
           </aside>
         </div>
       </div>
+
+      {/* End Interview Confirmation Popup */}
+      {showEndConfirmPopup && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.6)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '20px',
+            padding: '40px 50px',
+            textAlign: 'center',
+            boxShadow: '0 25px 60px rgba(0, 0, 0, 0.3)',
+            maxWidth: '400px',
+            width: '90%'
+          }}>
+            <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎉</div>
+            <h2 style={{ 
+              margin: '0 0 12px', 
+              fontSize: '24px', 
+              color: '#0f172a', 
+              fontWeight: 700 
+            }}>
+              Thank you for your cooperation!
+            </h2>
+            <p style={{ 
+              margin: '0 0 28px', 
+              fontSize: '14px', 
+              color: '#64748b' 
+            }}>
+              Are you sure you want to end the interview? This will save the session data.
+            </p>
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button
+                onClick={handleCancelEndInterview}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '12px',
+                  border: '1px solid #e2e8f0',
+                  backgroundColor: '#f8fafc',
+                  color: '#475569',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmEndInterview}
+                style={{
+                  padding: '12px 24px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  backgroundColor: '#2563eb',
+                  color: '#fff',
+                  fontWeight: 600,
+                  fontSize: '14px',
+                  cursor: 'pointer'
+                }}
+              >
+                Confirm & End
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
