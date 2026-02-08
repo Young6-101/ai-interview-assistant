@@ -55,11 +55,13 @@ async def root():
 # ============ RUN ============
 
 if __name__ == "__main__":
-    logger.info(f"Starting server on 127.0.0.1:8000")
+    host = os.getenv("HOST", "0.0.0.0") 
+    port = int(os.getenv("PORT", 8000))
+    
+    logger.info(f"Starting server on {host}:{port}")
     uvicorn.run(
         app,
-        host="127.0.0.1",
-        port=8000,
+        host=host,
+        port=port,
         log_level="info"
     )
-

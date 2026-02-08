@@ -3,9 +3,12 @@ import { useInterview } from '../contexts/InterviewContext'
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
 const WS_URL = (() => {
-  if (API_BASE_URL.startsWith('https://')) return API_BASE_URL.replace('https://', 'wss://') + '/ws'
-  if (API_BASE_URL.startsWith('http://')) return API_BASE_URL.replace('http://', 'ws://') + '/ws'
-  return `ws://${API_BASE_URL}/ws`
+  if (API_BASE_URL.startsWith('http')) {
+    return API_BASE_URL.replace(/^http/, 'ws').replace(/\/api$/, '') + '/ws'
+  }
+
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/ws`
 })()
 
 interface WebSocketMessage {
@@ -48,7 +51,7 @@ export const useWebSocketOptimized = () => {
     contextRef.current = context
   }, [context])
 
-  const handleCloseRef = useRef<(event: CloseEvent) => void>(() => {})
+  const handleCloseRef = useRef<(event: CloseEvent) => void>(() => { })
 
   /**
    * Set the container reference for transcript DOM operations
@@ -173,7 +176,7 @@ export const useWebSocketOptimized = () => {
   const sendPartialTranscript = useCallback(
     (id: string, speaker: string, text: string, timestamp?: number) => {
       if (!text?.trim()) return false
-      
+
       // ✅ Update DOM directly for instant feedback (no round-trip to backend)
       upsertTranscriptDOM({
         id,
@@ -182,7 +185,7 @@ export const useWebSocketOptimized = () => {
         timestamp: timestamp ?? Date.now(),
         isFinal: false
       })
-      
+
       return true
     },
     [upsertTranscriptDOM]
@@ -242,7 +245,7 @@ export const useWebSocketOptimized = () => {
           const speaker = (payload.speaker || 'UNKNOWN').toUpperCase() as 'HR' | 'CANDIDATE'
           const text = payload.text || payload.transcript || ''
           const timestamp = payload.timestamp || Date.now()
-          
+
           // Check if we already displayed this transcript via partial updates
           // by looking for existing elements with same speaker that have similar text
           const container = transcriptContainerRef.current
@@ -263,7 +266,7 @@ export const useWebSocketOptimized = () => {
               }
             }
           }
-          
+
           console.log('📝 Received new transcript:', payload)
           upsertTranscriptDOM({
             id: payload.id || `backend_${Date.now()}`,
