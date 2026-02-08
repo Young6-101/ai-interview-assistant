@@ -39,7 +39,7 @@ SuggestedQuestionItem.displayName = 'SuggestedQuestionItem'
 export const Interview: FC = () => {
   const navigate = useNavigate()
   const context = useInterview()
-  
+
   /**
    * 1. Initialize custom hooks.
    * Now using the optimized useWebSocketOptimized that handles DOM updates directly
@@ -83,7 +83,7 @@ export const Interview: FC = () => {
         timestamp: block.timestamp,
         isFinal: true
       })
-      
+
       // 2. Forward to backend via WebSocket
       // The backend will broadcast it back, and useWebSocketOptimized 
       // will handle DOM updates via broadcast_update
@@ -107,12 +107,12 @@ export const Interview: FC = () => {
   /**
    * 4. Initialize Audio Capture logic.
    */
-  const { 
-    startHrRecording, 
-    stopHrRecording, 
-    startCandidateRecording, 
-    stopCandidateRecording, 
-    setAssemblyAIToken 
+  const {
+    startHrRecording,
+    stopHrRecording,
+    startCandidateRecording,
+    stopCandidateRecording,
+    setAssemblyAIToken
   } = useAudioCapture(handleTranscript, handlePartialTranscript)
 
   // 5. Local UI States
@@ -122,9 +122,9 @@ export const Interview: FC = () => {
   const [isStarting, setIsStarting] = useState(false)
   const [showAIWarning, setShowAIWarning] = useState(false)
   const [showEndConfirmPopup, setShowEndConfirmPopup] = useState(false)
-  
+
   const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
-  
+
   // AI Warning visibility logic based on mode
   // Mode 3: always show warning
   useEffect(() => {
@@ -144,8 +144,8 @@ export const Interview: FC = () => {
     console.log('Interview component mounted - Triggering WebSocket connection')
     connect()
     return () => {
-        // Only disconnect if the component is actually unmounting
-        disconnect()
+      // Only disconnect if the component is actually unmounting
+      disconnect()
     }
   }, [connect, disconnect])
 
@@ -170,7 +170,7 @@ export const Interview: FC = () => {
         throw new Error(`Failed to fetch AssemblyAI config: ${response.status}`)
       }
       const data = await response.json()
-      
+
       // Try to use token first, fall back to API key
       const token = data.token || data.apiKey
       if (!token) {
@@ -313,19 +313,19 @@ export const Interview: FC = () => {
       setError('⚠️ Interview must be running to analyze')
       return
     }
-    
+
     setIsAnalyzing(true)
-    
+
     // 清空之前的问题列表，准备生成新内容
     context.clearSuggestedQuestions()
-    
+
     // Mode-based AI warning logic
     if (storedMode === 'mode2') {
       setShowAIWarning(true)
       // Hide after 10 seconds
       setTimeout(() => setShowAIWarning(false), 5000)
     }
-    
+
     try {
       requestAnalysis()
       // 按钮会在收到响应后自动恢复
@@ -377,43 +377,43 @@ export const Interview: FC = () => {
 
   // ============ RENDER (JSX) ============
   return (
-    <div style={{ 
+    <div style={{
       position: 'fixed',           // ✅ 固定定位，填充整个屏幕
       top: 0,                      // ✅ 从屏幕顶部开始
       left: 0,                     // ✅ 从屏幕左侧开始
       width: '100vw',              // ✅ 填充整个宽度
       height: '100vh',             // ✅ 填充整个高度
-      background: 'linear-gradient(180deg, #0f172a, #1f2a44)', 
-      color: '#0f172a', 
-      display: 'flex', 
+      background: 'linear-gradient(180deg, #0f172a, #1f2a44)',
+      color: '#0f172a',
+      display: 'flex',
       flexDirection: 'column',
       overflow: 'hidden'           // ✅ 固定页面，禁止滚动
     }}>
-      <div style={{ 
+      <div style={{
         height: '100vh',           // ✅ 固定高度填充视窗
-        display: 'flex', 
+        display: 'flex',
         flexDirection: 'row',      // ✅ 改为水平布局
         width: '100%'              // ✅ 确保宽度填满
       }}>
         {/* 左侧面板 - 视频和转录 */}
-        <div style={{ 
+        <div style={{
           width: '50%',               // 左边一半宽度
           display: 'flex',
           flexDirection: 'column',
           height: '100vh',
           backgroundColor: 'white'
         }}>
-          <div style={{ 
-            backgroundColor: 'white', 
-            borderRadius: '16px', 
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '16px',
             margin: '20px',
-            padding: '20px', 
-            boxShadow: '0 25px 60px rgba(15,23,42,0.45)', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '16px', 
+            padding: '20px',
+            boxShadow: '0 25px 60px rgba(15,23,42,0.45)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '16px',
             height: 'calc(50vh - 40px)',        // 上半部分
-            overflow: 'hidden'     
+            overflow: 'hidden'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'center' }}>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -442,14 +442,14 @@ export const Interview: FC = () => {
                 )}
               </div>
             </div>
-            
-            <div style={{ 
-              borderRadius: '16px', 
-              overflow: 'hidden', 
-              position: 'relative', 
-              flex: 1,               
-              backgroundColor: '#0f172a', 
-              minHeight: '200px'     
+
+            <div style={{
+              borderRadius: '16px',
+              overflow: 'hidden',
+              position: 'relative',
+              flex: 1,
+              backgroundColor: '#0f172a',
+              minHeight: '200px'
             }}>
               {isSharing && screenStream ? (
                 <div style={{ width: '100%', height: '100%' }}>
@@ -465,7 +465,16 @@ export const Interview: FC = () => {
                   </div>
                 </div>
               ) : (
-                <div style={{ padding: '32px', textAlign: 'center', color: '#f8fafc' }}>
+                <div style={{
+                  padding: '32px',
+                  textAlign: 'center',
+                  color: '#f8fafc',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%'
+                }}>
                   <p style={{ marginBottom: '16px', fontSize: '18px' }}>Ready when you are</p>
                   <button
                     onClick={handleSelectMeetingRoom}
@@ -478,33 +487,33 @@ export const Interview: FC = () => {
               )}
             </div>
           </div>
-          
+
           {/* Transcript Area */}
-          <div style={{ 
-            backgroundColor: 'white', 
-            borderRadius: '16px', 
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '16px',
             margin: '20px',
-            padding: '20px', 
-            boxShadow: '0 25px 60px rgba(15,23,42,0.2)', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '12px', 
+            padding: '20px',
+            boxShadow: '0 25px 60px rgba(15,23,42,0.2)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
             height: 'calc(50vh - 40px)',    // 下半部分
-            overflow: 'hidden'     
+            overflow: 'hidden'
           }}>
             <h3 style={{ margin: 0, fontSize: '14px', color: '#0f172a', fontWeight: 600 }}>Transcript</h3>
-            <div 
+            <div
               ref={transcriptContainerRef}
-              style={{ 
-                flex: 1, 
-                overflowY: 'auto',        
-                display: 'flex', 
-                flexDirection: 'column', 
-                gap: '2px', 
-                padding: '8px', 
-                backgroundColor: '#f8fafc', 
-                borderRadius: '8px', 
-                border: '1px solid #e2e8f0' 
+              style={{
+                flex: 1,
+                overflowY: 'auto',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                padding: '8px',
+                backgroundColor: '#f8fafc',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0'
               }}
             >
               {/* Will be populated by DOM directly */}
@@ -513,8 +522,8 @@ export const Interview: FC = () => {
         </div>
 
         {/* 右侧面板 - Header、AI警告和问题 */}
-        <div style={{ 
-          width: '50%',              
+        <div style={{
+          width: '50%',
           display: 'flex',
           flexDirection: 'column',
           height: '100vh',
@@ -522,10 +531,10 @@ export const Interview: FC = () => {
           position: 'relative'
         }}>
           {/* Header信息 */}
-          <header style={{ 
-            padding: '20px 32px', 
+          <header style={{
+            padding: '20px 32px',
             borderBottom: '1px solid rgba(248,250,252,0.1)',
-            boxSizing: 'border-box'    
+            boxSizing: 'border-box'
           }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '32px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
@@ -554,25 +563,25 @@ export const Interview: FC = () => {
           )}
 
           {/* Suggestions Sidebar */}
-          <aside style={{ 
+          <aside style={{
             position: 'absolute',
-            top: '50%',
+            top: '80px',
             left: '32px',
             right: '32px',
-            transform: 'translateY(-50%)',
-            height: 'calc(100vh - 200px)',
-            backgroundColor: 'white', 
-            borderRadius: '16px', 
-            padding: '20px', 
-            boxShadow: '0 25px 60px rgba(15,23,42,0.25)', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            gap: '12px', 
-            overflow: 'hidden'       
+            bottom: '20px',
+            height: 'auto',
+            backgroundColor: 'white',
+            borderRadius: '16px',
+            padding: '20px',
+            boxShadow: '0 25px 60px rgba(15,23,42,0.25)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '12px',
+            overflow: 'hidden'
           }}>
             {/* Title always visible */}
             <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>Follow-up Questions</h3>
-            
+
             {/* AI Analyze Button */}
             <button
               onClick={handleRequestAnalysis}
@@ -581,10 +590,10 @@ export const Interview: FC = () => {
                 padding: '10px 16px',
                 borderRadius: '12px',
                 border: 'none',
-                background: isAnalyzing 
-                  ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' 
-                  : context.interviewState === 'RUNNING' 
-                    ? 'linear-gradient(135deg, #8b5cf6, #a855f7)' 
+                background: isAnalyzing
+                  ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
+                  : context.interviewState === 'RUNNING'
+                    ? 'linear-gradient(135deg, #8b5cf6, #a855f7)'
                     : '#e2e8f0',
                 color: context.interviewState === 'RUNNING' ? '#fff' : '#94a3b8',
                 fontWeight: 600,
@@ -609,40 +618,40 @@ export const Interview: FC = () => {
                 </>
               )}
             </button>
-            
-            {/* AI Warning Banner */}
-            {showAIWarning && (
-              <div style={{
-                padding: '12px 14px',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
-                color: '#92400e',
-                fontSize: '13px',
-                fontWeight: 600,
-                textAlign: 'center',
-                border: '2px solid #fcd34d',
-                boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
-                animation: storedMode === 'mode2' ? 'pulse 5s ease-in-out infinite' : 'none'
-              }}>
-                <div>⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW</div>
-                {storedMode === 'mode2' && (
-                  <div style={{ fontSize: '11px', marginTop: '6px', opacity: 0.85 }}>(This message will automatically disappear in 5 seconds)</div>
-                )}
-              </div>
-            )}
-            
-            {/* Questions List */}
-            <div style={{ 
-              flex: 1, 
-              display: 'flex', 
-              flexDirection: 'column', 
-              gap: '10px', 
-              overflowY: 'auto',       
-              minHeight: 0 
+
+            {/* AI Warning Banner - Always rendered to maintain layout */}
+            <div style={{
+              padding: '12px 14px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
+              color: '#92400e',
+              fontSize: '13px',
+              fontWeight: 600,
+              textAlign: 'center',
+              border: '2px solid #fcd34d',
+              boxShadow: '0 4px 12px rgba(251, 191, 36, 0.3)',
+              animation: storedMode === 'mode2' ? 'pulse 5s ease-in-out infinite' : 'none',
+              opacity: showAIWarning ? 1 : 0,
+              visibility: showAIWarning ? 'visible' : 'hidden',
+              transition: 'opacity 0.3s ease, visibility 0.3s ease'
+
             }}>
-              {context.suggestedQuestions.length === 0 ? (
-                <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '20px 0' }}>Click the button above to generate questions</p>
-              ) : (
+              <div>⚠️ CANDIDATE KNOWS YOU ARE USING AI NOW</div>
+              {storedMode === 'mode2' && (
+                <div style={{ fontSize: '11px', marginTop: '6px', opacity: 0.85 }}>(This message will automatically disappear in 5 seconds)</div>
+              )}
+            </div>
+
+            {/* Questions List */}
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '10px',
+              overflowY: 'auto',
+              minHeight: 0
+            }}>
+              {context.suggestedQuestions.length === 0 ? null : (
                 context.suggestedQuestions.map((q) => (
                   <SuggestedQuestionItem key={q.id} question={q} />
                 ))
@@ -676,18 +685,18 @@ export const Interview: FC = () => {
             width: '90%'
           }}>
             <div style={{ fontSize: '48px', marginBottom: '16px' }}>🎉</div>
-            <h2 style={{ 
-              margin: '0 0 12px', 
-              fontSize: '24px', 
-              color: '#0f172a', 
-              fontWeight: 700 
+            <h2 style={{
+              margin: '0 0 12px',
+              fontSize: '24px',
+              color: '#0f172a',
+              fontWeight: 700
             }}>
               Thank you for your cooperation!
             </h2>
-            <p style={{ 
-              margin: '0 0 28px', 
-              fontSize: '14px', 
-              color: '#64748b' 
+            <p style={{
+              margin: '0 0 28px',
+              fontSize: '14px',
+              color: '#64748b'
             }}>
               Are you sure you want to end the interview? This will save the session data.
             </p>
