@@ -50,12 +50,18 @@ const apiClient = axios.create({
   timeout: 10000,
 })
 
+// In-memory token storage (cleared on refresh)
+let storedToken: string | null = null
+
+export const setApiToken = (token: string | null) => {
+  storedToken = token
+}
+
 // Add token to requests
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('access_token') ?? localStorage.getItem('token')
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
+    if (storedToken) {
+      config.headers.Authorization = `Bearer ${storedToken}`
     }
     return config
   },
@@ -67,8 +73,7 @@ apiClient.interceptors.response.use(
   (response) => response.data,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('token')
+      storedToken = null
       window.location.href = '/login'
     }
     return Promise.reject(error)

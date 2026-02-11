@@ -123,7 +123,7 @@ export const Interview: FC = () => {
   const [showAIWarning, setShowAIWarning] = useState(false)
   const [showEndConfirmPopup, setShowEndConfirmPopup] = useState(false)
 
-  const storedMode = localStorage.getItem('interview_mode') ?? 'mode1'
+  const storedMode = context.interviewMode
 
   // AI Warning visibility logic based on mode
   // Mode 3: always show warning
@@ -154,10 +154,11 @@ export const Interview: FC = () => {
    * Redirect to login if user session is missing.
    */
   useEffect(() => {
-    if (!localStorage.getItem('candidate_name')) {
+    // Check context for candidate name (memory only)
+    if (!context.candidateName) {
       navigate('/login')
     }
-  }, [navigate])
+  }, [context.candidateName, navigate])
 
   /**
    * C. Fetch AssemblyAI Configuration on Demand
@@ -368,6 +369,8 @@ export const Interview: FC = () => {
 
   const handleLogout = () => {
     disconnect()
+    // LocalStorage clearing is optional now since we rely on memory, 
+    // but good for cleaning up potential old data
     localStorage.clear()
     navigate('/login')
   }

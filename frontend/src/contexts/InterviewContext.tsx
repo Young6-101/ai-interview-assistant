@@ -36,41 +36,51 @@ interface InterviewContextType {
   // Interview Control
   interviewState: InterviewState;
   setInterviewState: (state: InterviewState) => void;
-  
+
   // Data
   transcripts: Transcript[];
   addTranscript: (transcript: Transcript) => void;
   updateTranscript: (id: string, updates: Partial<Transcript>) => void;
-  
+
   weakPoints: WeakPoint[];
   addWeakPoint: (point: WeakPoint) => void;
   updateWeakPoint: (id: string, updates: Partial<WeakPoint>) => void;
-  
+
   suggestedQuestions: SuggestedQuestion[];
   addSuggestedQuestion: (question: SuggestedQuestion) => void;
   clearSuggestedQuestions: () => void;
-  
+
   topics: Topic[];
   addTopic: (topic: Topic) => void;
   updateTopic: (id: string, updates: Partial<Topic>) => void;
-  
+
   // WebSocket Status
   isWebSocketConnected: boolean;
   setWebSocketConnected: (connected: boolean) => void;
-  
+
   // Audio Status
   isHrMicConnected: boolean;
   setHrMicConnected: (connected: boolean) => void;
   isCandidateMicConnected: boolean;
   setCandidateMicConnected: (connected: boolean) => void;
-  
+
   // Meeting Room Status
   isMeetingRoomConnected: boolean;
   setMeetingRoomConnected: (connected: boolean) => void;
-  
+
   // UI state
   showFullscreen: boolean;
   setShowFullscreen: (show: boolean) => void;
+
+  // 🔹 User Session State (Memory Only)
+  candidateName: string;
+  setCandidateName: (name: string) => void;
+  token: string;
+  setToken: (token: string) => void;
+  interviewMode: string;
+  setInterviewMode: (mode: string) => void;
+  candidateId: string;
+  setCandidateId: (id: string) => void;
 }
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
@@ -86,6 +96,12 @@ export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [isCandidateMicConnected, setCandidateMicConnected] = useState(false);
   const [isMeetingRoomConnected, setMeetingRoomConnected] = useState(false);
   const [showFullscreen, setShowFullscreen] = useState(false);
+
+  // 🔹 User Session State
+  const [candidateName, setCandidateName] = useState('');
+  const [token, setToken] = useState('');
+  const [interviewMode, setInterviewMode] = useState('mode1');
+  const [candidateId, setCandidateId] = useState('');
 
   const addTranscript = useCallback((transcript: Transcript) => {
     setTranscripts((prev) => [...prev, transcript]);
@@ -150,6 +166,15 @@ export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children 
     setMeetingRoomConnected,
     showFullscreen,
     setShowFullscreen,
+    // User Session State
+    candidateName,
+    setCandidateName,
+    token,
+    setToken,
+    interviewMode,
+    setInterviewMode,
+    candidateId,
+    setCandidateId,
   };
 
   return (

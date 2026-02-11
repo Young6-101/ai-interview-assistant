@@ -1,10 +1,12 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useInterview } from '../contexts/InterviewContext'
+import { setApiToken } from '../services/api'
 
 const modeOptions = [
   { value: 'mode1' },
   { value: 'mode2' },
-  { value: 'mode3'}
+  { value: 'mode3' }
 ] as const
 
 type ModeOption = (typeof modeOptions)[number]['value']
@@ -19,6 +21,7 @@ const COMMON_PASSWORD = 'nus2026' // PASSWORD
 
 export const Login = () => {
   const navigate = useNavigate()
+  const context = useInterview()
   const [candidateName, setCandidateName] = useState('')
   const [password, setPassword] = useState('')
   const [mode, setMode] = useState<ModeOption>('mode1')
@@ -39,18 +42,26 @@ export const Login = () => {
     setError('')
     const timestamp = new Date().toISOString()
     const token = generateToken(trimmedName)
-    localStorage.setItem('token', token)
-    localStorage.setItem('candidate_name', trimmedName)
-    localStorage.setItem('interview_mode', mode)
-    localStorage.setItem('candidate_id', `local_${timestamp}`)
-    localStorage.setItem('login_timestamp', timestamp)
+
+    // Save to Context (Memory Only)
+    context.setCandidateName(trimmedName)
+    context.setToken(token)
+    context.setInterviewMode(mode)
+    context.setCandidateId(`local_${timestamp}`)
+
+    // Save to API (Memory Only)
+    setApiToken(token)
+
+    // Clear any residual localStorage
+    localStorage.clear()
+
     navigate('/interview')
   }
 
   return (
     <div
       style={{
-        position: 'fixed',          
+        position: 'fixed',
         top: 0,                     // ✅ 覆盖整个视窗
         left: 0,                    // ✅ 覆盖整个视窗  
         width: '100vw',             // ✅ 填充整个宽度

@@ -423,8 +423,9 @@ export const useWebSocketOptimized = () => {
     sendPartialTranscript,
     requestAnalysis,
     startInterview: useCallback(() => {
-      const token = localStorage.getItem('token') || localStorage.getItem('access_token')
-      const mode = localStorage.getItem('interview_mode') || 'mode1'
+      // Use Context instead of localStorage
+      const token = contextRef.current.token
+      const mode = contextRef.current.interviewMode
       return send({ type: 'start', token, mode })
     }, [send]),
     stopInterview: useCallback(() => send({ type: 'end' }), [send]),
