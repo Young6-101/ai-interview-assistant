@@ -165,7 +165,8 @@ export const Interview: FC = () => {
    */
   const fetchAssemblyAIConfig = useCallback(async (): Promise<string | null> => {
     try {
-      const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/$/, '')
+      // Use relative path - rely on Nginx proxy
+      const API_BASE_URL = ''
       const response = await fetch(`${API_BASE_URL}/api/config/assemblyai`)
       if (!response.ok) {
         throw new Error(`Failed to fetch AssemblyAI config: ${response.status}`)

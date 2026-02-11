@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// Use relative path - rely on Nginx proxy
+const API_BASE_URL = ''
 
 // ============ Type Definitions ============
 
