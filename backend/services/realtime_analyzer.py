@@ -183,35 +183,47 @@ Analyze using {framework.upper()} framework."""
                 messages=[
                     {
                         "role": "system",
-                        "content": f"""You are an HR interviewer. Generate {count} natural follow-up questions to probe deeper into a weak area.
+                        "content": f"""You are an experienced HR interviewer conducting a behavioral interview. 
+Generate {count} insightful follow-up questions that dig deeper into the candidate's weak areas.
 
 Questions should be:
 - Open-ended and conversational
-- Contextually relevant to the interview
-- Designed to understand the candidate better
+- Specific to the actual content of the interview (use names, projects, details mentioned)
+- Designed to elicit concrete examples and measurable results
 - Professional and respectful
+- Varied in focus (don't ask the same question three times)
 
-Response as JSON array of strings:
-["question1", "question2", ...]"""
+IMPORTANT: Respond with ONLY a JSON array of strings, nothing else:
+["question1", "question2", "question3"]"""
                     },
                     {
                         "role": "user",
-                        "content": f"""Interview context: {context}
+                        "content": f"""Based on this interview exchange:
 
-Weak area to probe: {weak_area}
+{context}
 
-Generate {count} follow-up questions."""
+The main area that needs more depth: {weak_area}
+
+Generate {count} specific, varied follow-up questions that will help the candidate provide more detail."""
                     }
                 ],
-                temperature=0.7,
+                temperature=0.8,
             )
 
-            result_text = response.choices[0].message.content
+            result_text = response.choices[0].message.content.strip()
+            
+            # Try to extract JSON if there's extra text
+            if not result_text.startswith('['):
+                start = result_text.find('[')
+                end = result_text.rfind(']') + 1
+                if start >= 0 and end > start:
+                    result_text = result_text[start:end]
+            
             questions = json.loads(result_text)
             return questions if isinstance(questions, list) else [questions]
 
-        except json.JSONDecodeError:
-            logger.warning(f"Failed to parse questions response, returning defaults")
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse questions response: {e}, returning defaults")
             return [
                 f"Can you tell me more about {weak_area}?",
                 f"What challenges did you face with {weak_area}?",

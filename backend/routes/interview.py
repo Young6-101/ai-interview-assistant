@@ -328,15 +328,27 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Generate follow-up questions (only OpenAI call needed)
                     if last_hr_question and last_candidate_answer:
                         analyzer = RealtimeAnalyzer()
-                        weak_area = "the answer"
+                        
+                        # Build a meaningful context for question generation
+                        weak_area_description = "the candidate's answer"
                         if last_analysis:
                             weak_points = last_analysis.get("weak_points", [])
                             if weak_points:
-                                weak_area = weak_points[0].get("component", "the topic")
+                                # Use the actual question/description from weak points
+                                first_weak = weak_points[0]
+                                component = first_weak.get("component", "")
+                                question = first_weak.get("question", "")
+                                weak_area_description = f"{component}: {question}" if question else component
+                        
+                        # Include more context in the question generation
+                        interview_context = f"""HR Question: {last_hr_question}
+Candidate Answer: {last_candidate_answer}
+Analysis Score: {last_analysis.get('quality_score', 'N/A') if last_analysis else 'N/A'}
+Focus Area: {weak_area_description}"""
                         
                         followups = await analyzer.generate_followup_questions(
-                            f"Q: {last_hr_question}\nA: {last_candidate_answer}",
-                            weak_area,
+                            interview_context,
+                            weak_area_description,
                             3
                         )
                         logger.info(f"💡 Generated {len(followups)} follow-up questions")

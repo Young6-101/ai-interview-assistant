@@ -318,25 +318,33 @@ export const Interview: FC = () => {
 
     setIsAnalyzing(true)
 
-    // 清空之前的问题列表，准备生成新内容
     context.clearSuggestedQuestions()
 
     // Mode-based AI warning logic
     if (storedMode === 'mode2') {
       setShowAIWarning(true)
-      // Hide after 10 seconds
+      // Hide after 5 seconds
       setTimeout(() => setShowAIWarning(false), 5000)
     }
 
     try {
       requestAnalysis()
-      // 按钮会在收到响应后自动恢复
-      setTimeout(() => setIsAnalyzing(false), 3000)
+      // Safety timeout: reset analyzing state after 30 seconds if questions don't arrive
+      setTimeout(() => {
+        setIsAnalyzing(false)
+      }, 30000)
     } catch (err) {
       setError('❌ Analysis request failed')
       setIsAnalyzing(false)
     }
   }
+
+  // Effect: Reset isAnalyzing when new questions arrive
+  useEffect(() => {
+    if (context.suggestedQuestions.length > 0) {
+      setIsAnalyzing(false)
+    }
+  }, [context.suggestedQuestions])
 
   // Show confirmation popup when clicking End Interview
   const handleEndInterviewClick = () => {
@@ -584,31 +592,34 @@ export const Interview: FC = () => {
             overflow: 'hidden'
           }}>
             {/* Title always visible */}
-            <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>Follow-up Questions</h3>
+            <h3 style={{ margin: 0, fontSize: '16px', color: '#0f172a', fontWeight: 700 }}>
+              Follow-up Questions
+            </h3>
 
             {/* AI Analyze Button */}
             <button
               onClick={handleRequestAnalysis}
               disabled={!isConnected || context.interviewState !== 'RUNNING' || isAnalyzing}
               style={{
-                padding: '10px 16px',
+                padding: '14px 24px',
                 borderRadius: '12px',
                 border: 'none',
                 background: isAnalyzing
                   ? 'linear-gradient(135deg, #6366f1, #8b5cf6)'
-                  : context.interviewState === 'RUNNING'
+                  : context.interviewState === 'RUNNING' && isConnected
                     ? 'linear-gradient(135deg, #8b5cf6, #a855f7)'
                     : '#e2e8f0',
-                color: context.interviewState === 'RUNNING' ? '#fff' : '#94a3b8',
+                color: (context.interviewState === 'RUNNING' && isConnected) || isAnalyzing ? '#fff' : '#94a3b8',
                 fontWeight: 600,
-                fontSize: '14px',
-                cursor: context.interviewState === 'RUNNING' && !isAnalyzing ? 'pointer' : 'not-allowed',
+                fontSize: '16px',
+                cursor: context.interviewState === 'RUNNING' && isConnected && !isAnalyzing ? 'pointer' : 'not-allowed',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: '8px',
                 transition: 'all 0.2s ease',
-                width: '100%'
+                width: '100%',
+                opacity: context.interviewState === 'RUNNING' && isConnected && !isAnalyzing ? 1 : 0.6
               }}
             >
               {isAnalyzing ? (

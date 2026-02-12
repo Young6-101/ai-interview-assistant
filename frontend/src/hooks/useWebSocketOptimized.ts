@@ -236,53 +236,14 @@ export const useWebSocketOptimized = () => {
         }
 
         /**
-         * ✅ Final transcript - update DOM and Context
-         * Skip if we already have this transcript (to avoid duplicates from broadcast)
+         * ✅ Final transcript - ignore from backend since we show partials
+         * The page shows instant (partial) transcripts
+         * Full transcripts from backend are just for OpenAI analysis
          */
         case 'new_transcript':
         case 'transcript_update': {
-          const payload = data.payload || data
-          const speaker = (payload.speaker || 'UNKNOWN').toUpperCase() as 'HR' | 'CANDIDATE'
-          const text = payload.text || payload.transcript || ''
-          const timestamp = payload.timestamp || Date.now()
-
-          // Check if we already displayed this transcript via partial updates
-          // by looking for existing elements with same speaker that have similar text
-          const container = transcriptContainerRef.current
-          if (container) {
-            const existingItems = container.querySelectorAll(`.transcript-item.${speaker === 'HR' ? 'recruiter' : 'candidate'}`)
-            const lastItem = existingItems[existingItems.length - 1]
-            if (lastItem) {
-              const existingText = lastItem.querySelector('.transcript-text')?.textContent || ''
-              // If existing text matches or is substring of new text, just mark as final
-              if (existingText === text || text.includes(existingText)) {
-                console.log('📝 Skipping duplicate transcript, marking existing as final')
-                lastItem.classList.remove('speaking')
-                lastItem.classList.add('final')
-                // Update text if needed (in case partial was incomplete)
-                const textNode = lastItem.querySelector('.transcript-text')
-                if (textNode) textNode.textContent = text
-                break
-              }
-            }
-          }
-
-          console.log('📝 Received new transcript:', payload)
-          upsertTranscriptDOM({
-            id: payload.id || `backend_${Date.now()}`,
-            speaker,
-            text,
-            timestamp,
-            isFinal: true
-          })
-          // Also sync to Context for any components that might need it
-          contextRef.current.addTranscript({
-            id: payload.id || `backend_${Date.now()}`,
-            speaker,
-            text,
-            timestamp,
-            isFinal: true
-          })
+          // Skip - we already show partial transcripts in real-time
+          // The backend broadcast is just for storage/analysis
           break
         }
 
@@ -308,11 +269,24 @@ export const useWebSocketOptimized = () => {
          * ✅ Suggested questions - keep in Context
          */
         case 'suggested_questions': {
-          const questions = data.questions || data.payload || []
+          console.log(`✅ Received suggested_questions:`, data)
+          const payload = data.payload || data
+          // Backend sends { type: "suggested_questions", session_id, questions: [...] }
+          const questions = payload.questions || data.questions || []
+
+          if (!questions || (Array.isArray(questions) && questions.length === 0)) {
+            console.log('⚠️ No questions found in suggested_questions payload')
+            break
+          }
+
           const questionList = Array.isArray(questions) ? questions : [questions]
+
           questionList.forEach((q: any, index: number) => {
+            if (!q) return
+
             // Handle both string and object formats
             const questionText = typeof q === 'string' ? q : (q.text || q.question || '')
+
             if (questionText) {
               contextRef.current.addSuggestedQuestion({
                 id: `q_${Date.now()}_${index}`,
@@ -322,6 +296,20 @@ export const useWebSocketOptimized = () => {
               })
             }
           })
+          break
+        }
+
+        /**
+         * ✅ Analysis complete - just a notification (questions sent separately)
+         */
+        case 'analysis_complete': {
+          console.log('✅ Analysis complete notification received')
+          // This is just a status update, questions were sent via 'suggested_questions' message
+          break
+        }
+
+        case 'hr_question_classified': {
+          console.log('ℹ️ HR Question Classified:', data.payload || data)
           break
         }
 
