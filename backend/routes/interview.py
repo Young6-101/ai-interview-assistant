@@ -82,8 +82,12 @@ async def save_interview(interview_id: str, request: SaveInterviewRequest):
             interview_sessions[interview_id]["end_time"] = datetime.now().isoformat()
             
             # Save to JSON file
-            filename = f"../interviews/{interview_id}.json"
-            os.makedirs("../interviews", exist_ok=True)
+            # In Docker (WORKDIR /app), "interviews" is correct. "../interviews" goes to root.
+            # Local dev: ensure "interviews" dir exists in current CWD (backend/)
+            output_dir = "interviews"
+            os.makedirs(output_dir, exist_ok=True)
+            
+            filename = f"{output_dir}/{interview_id}.json"
             with open(filename, "w") as f:
                 json.dump(interview_sessions[interview_id], f, indent=2)
             
@@ -443,8 +447,10 @@ Focus Area: {weak_area_description}"""
                             interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
                             
                             # Save to JSON file
-                            filename = f"../interviews/{session_id}.json"
-                            os.makedirs("../interviews", exist_ok=True)
+                            output_dir = "interviews"
+                            os.makedirs(output_dir, exist_ok=True)
+                            
+                            filename = f"{output_dir}/{session_id}.json"
                             with open(filename, "w") as f:
                                 json.dump(interview_sessions[session_id], f, indent=2)
                             
@@ -463,8 +469,10 @@ Focus Area: {weak_area_description}"""
                 if session_id in interview_sessions:
                     interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
                     # Save on disconnect
-                    filename = f"../interviews/{session_id}.json"
-                    os.makedirs("../interviews", exist_ok=True)
+                    output_dir = "interviews"
+                    os.makedirs(output_dir, exist_ok=True)
+                    
+                    filename = f"{output_dir}/{session_id}.json"
                     with open(filename, "w") as f:
                         json.dump(interview_sessions[session_id], f, indent=2)
     
