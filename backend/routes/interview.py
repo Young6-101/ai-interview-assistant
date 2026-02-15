@@ -1,18 +1,20 @@
-"""Interview routes - REST API and WebSocket"""
+
+"""Interview routes - REST API and WebSocket (V2-Lite: OpenAI Realtime Only)"""
 
 import os
 import json
 import time
 import logging
+import base64
+import asyncio
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from utils.auth import verify_token
-from utils.broadcast import broadcast_update
+# from utils.broadcast import broadcast_update # Not used in lite mode
 from core.state import interview_sessions, active_websockets, state_lock
-from services.realtime_analyzer import RealtimeAnalyzer
-from collections import defaultdict
+from services.openai_realtime import OpenAIRealtimeService
 
 logger = logging.getLogger(__name__)
 
@@ -23,136 +25,34 @@ router = APIRouter(tags=["interview"])
 class CreateInterviewRequest(BaseModel):
     candidate_name: str
     candidate_email: Optional[str] = None
-    mode: str = "mode1"
-
-class SaveInterviewRequest(BaseModel):
-    transcripts: list
-    weak_points: list
-    questions_asked: list = []
-    suggested_questions: list = []
+    mode: str = "realtime"
 
 # ============ REST API ENDPOINTS ============
 
 @router.post("/api/interview/create")
 async def create_interview(request: CreateInterviewRequest):
-    """Create new interview"""
+    """Create new interview session"""
     interview_id = f"interview_{int(time.time())}"
     
     async with state_lock:
         interview_sessions[interview_id] = {
             "id": interview_id,
             "candidate_name": request.candidate_name,
-            "candidate_email": request.candidate_email,
-            "mode": request.mode,
-            "status": "created",
             "start_time": datetime.now().isoformat(),
+            "status": "created",
             "transcripts": [],
-            "weak_points": [],
-
-            "utterance_buffer":{
-                "current_speaker": None,
-                "current_text": "",
-                "current_start_timestamp": None,
-                "last_activity_time": time
-            }
+            "suggested_questions": []
         }
     
-    logger.info(f"✨ Interview created: {interview_id}")
-    
-    return {
-        "id": interview_id,
-        "candidate_name": request.candidate_name,
-        "candidate_email": request.candidate_email,
-        "mode": request.mode,
-        "status": "created",
-        "start_time": datetime.now().isoformat(),
-        "transcripts": [],
-        "weak_points": []
-    }
+    return {"interview_id": interview_id, "status": "created"}
 
-@router.post("/api/interview/{interview_id}/save")
-async def save_interview(interview_id: str, request: SaveInterviewRequest):
-    """Save interview data"""
-    async with state_lock:
-        if interview_id in interview_sessions:
-            interview_sessions[interview_id]["transcripts"] = request.transcripts
-            interview_sessions[interview_id]["weak_points"] = request.weak_points
-            interview_sessions[interview_id]["questions_asked"] = request.questions_asked
-            interview_sessions[interview_id]["suggested_questions"] = request.suggested_questions
-            interview_sessions[interview_id]["end_time"] = datetime.now().isoformat()
-            
-            # Save to JSON file
-            # In Docker (WORKDIR /app), "interviews" is correct. "../interviews" goes to root.
-            # Local dev: ensure "interviews" dir exists in current CWD (backend/)
-            output_dir = "interviews"
-            os.makedirs(output_dir, exist_ok=True)
-            
-            filename = f"{output_dir}/{interview_id}.json"
-            with open(filename, "w") as f:
-                json.dump(interview_sessions[interview_id], f, indent=2)
-            
-            logger.info(f"💾 Interview saved: {filename}")
-            
-            return {"message": "Interview saved successfully"}
-    
-    return {"error": "Interview not found"}
-
-# ============ HELPER FUNCTIONS ============
-
-async def commit_buffer(session_id: str, session: dict, buffer: dict):
-    """Commit the current utterance buffer to transcripts and trigger analysis"""
-    if not buffer["current_text"]:
-        return
-
-    full_text = buffer["current_text"].strip()
-    entry = {
-        "speaker": buffer["current_speaker"],
-        "text": full_text,
-        "timestamp": buffer["current_start_timestamp"],
-        "time": datetime.fromtimestamp(buffer["current_start_timestamp"] / 1000).strftime("%Y-%m-%d %H:%M:%S")
-    }
-
-    # 存入 transcripts
-    session["transcripts"].append(entry)
-
-    logger.info(f"📝 COMMIT {buffer['current_speaker'].upper()}: {full_text[:50]}...")
-
-    # 推送完整 utterance 给前端（不再碎）
-    await broadcast_update({
-        "type": "new_transcript",
-        "session_id": session_id,
-        "payload": entry
-    })
-
-    # 根据 speaker 自动分析（现在 text 是完整的）
-    analyzer = RealtimeAnalyzer()
-
-    if buffer["current_speaker"] == "hr":
-        classification = await analyzer.classify_question(full_text)
-        logger.info(f"🎯 HR Question: {classification.get('question_type')}")
-        session["last_hr_question"] = full_text
-        session["last_classification"] = classification
-
-    elif buffer["current_speaker"] == "candidate":
-        last_q = session.get("last_hr_question")
-        if last_q:
-            analysis = await analyzer.analyze_answer(last_q, full_text, "star")
-            logger.info(f"📊 Answer score: {analysis.get('quality_score')}")
-            session["last_candidate_answer"] = full_text
-            session["last_analysis"] = analysis
-            # 可选：自动加到 weak_points 或触发 suggested_questions
-
-    # 清空 buffer
-    buffer["current_speaker"] = None
-    buffer["current_text"] = ""
-    buffer["current_start_timestamp"] = None
-
-# ============ WEBSOCKET ENDPOINT ============
+# ============ WEBSOCKET ENDPOINT (REALTIME ONLY) ============
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
-    WebSocket endpoint for real-time interview
+    WebSocket endpoint for real-time interview (V2-Lite)
+    Connects frontend directly to OpenAI Realtime Service via backend proxy.
     """
     try:
         await websocket.accept()
@@ -160,325 +60,209 @@ async def websocket_endpoint(websocket: WebSocket):
         logger.info(f"✅ WebSocket accepted from {websocket.client}")
     except Exception as e:
         logger.error(f"❌ WebSocket accept failed: {e}")
-        raise
-    
+        return
+
     session_id = None
-    is_paused = False
+    openai_service = None
+    openai_task = None
     
     try:
         while True:
             try:
                 data = await websocket.receive_json()
-            except Exception as e:
-                # Connection closed or invalid JSON
-                logger.debug(f"WebSocket receive error (connection closed?): {type(e).__name__}")
+            except Exception:
                 break
             
             message_type = data.get("type")
-            logger.info(f"📨 Received: {message_type}")
             
-            # ===== PING (Keep Alive) =====
+            # ===== PING =====
             if message_type == "ping":
-                try:
-                    await websocket.send_json({"type": "pong"})
-                except Exception:
-                    break
+                await websocket.send_json({"type": "pong"})
                 continue
             
+            # ===== GENERATE QUESTIONS =====
+            if message_type == "generate_questions":
+                if openai_service:
+                    await openai_service.send_text_instruction("Based on the conversation so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool.")
+                    await websocket.send_json({"type": "info", "message": "Generating questions..."})
+                continue
+
             # ===== START INTERVIEW =====
             if message_type == "start":
                 token = data.get("token")
-                mode = data.get("mode", "mode1")
-                
-                # Verify token
                 username = verify_token(token)
+                
                 if not username:
-                    try:
-                        await websocket.send_json({
-                            "type": "error",
-                            "message": "Invalid token"
-                        })
-                    except Exception as e:
-                        logger.debug(f"Failed to send error: {e}")
+                    await websocket.send_json({"type": "error", "message": "Invalid token"})
                     continue
                 
-                # Create session
                 session_id = f"session_{int(time.time())}_{username}"
+                
+                # Initialize Session State
+                input_username = data.get("username")
+                input_mode = data.get("mode", "realtime")
+                
+                # Use frontend username if provided, otherwise token username
+                final_username = input_username if input_username else username
                 
                 async with state_lock:
                     interview_sessions[session_id] = {
                         "id": session_id,
-                        "username": username,
-                        "mode": mode,
+                        "username": final_username,
+                        "mode": input_mode,
                         "start_time": datetime.now().isoformat(),
                         "transcripts": [],
-                        "weak_points": [],
-                        "utterance_buffer": {
-                            "current_speaker": None,
-                            "current_text": "",
-                            "current_start_timestamp": None,
-                            "last_activity_time": time.time()
-                        }
+                        "suggested_questions": []
                     }
                 
-                logger.info(f"✨ Interview started: {session_id} (mode: {mode})")
-                
+                logger.info(f"✨ Interview started: {session_id}")
+
+                # Initialize OpenAI Realtime Service
                 try:
+                    openai_service = OpenAIRealtimeService()
+                    await openai_service.connect()
+                    logger.info("🚀 OpenAI Realtime Service Connected")
+                    
+                    # Background listener: OpenAI -> Frontend
+                    async def listen_to_openai():
+                        try:
+                            # Iterate over events yielded by the service
+                            async for event in openai_service.listen():
+                                
+                                # 1. TRANSCRIPT (Final)
+                                if event["type"] == "transcript":
+                                    text = event.get("text", "")
+                                    timestamp = int(time.time() * 1000)
+                                    
+                                    # Send to Frontend
+                                    await websocket.send_json({
+                                        "type": "transcript_update",
+                                        "session_id": session_id,
+                                        "payload": {
+                                            "speaker": "candidate",
+                                            "text": text,
+                                            "timestamp": timestamp,
+                                            "is_final": True
+                                        }
+                                    })
+                                    
+                                    # Save to Session State
+                                    async with state_lock:
+                                        if session_id in interview_sessions:
+                                            interview_sessions[session_id]["transcripts"].append({
+                                                "speaker": "candidate",
+                                                "text": text,
+                                                "timestamp": timestamp
+                                            })
+
+                                # 2. SUGGESTED QUESTIONS (Function Call)
+                                elif event["type"] == "analysis":
+                                    payload = event.get("payload", {})
+                                    questions_list = payload.get("suggestions", [])
+                                    
+                                    logger.info(f"💡 AI Generated {len(questions_list)} questions")
+                                    
+                                    # Format for frontend
+                                    frontend_questions = []
+                                    for i, q in enumerate(questions_list):
+                                        frontend_questions.append({
+                                            "id": f"q_{int(time.time())}_{i}",
+                                            "text": q.get("question", ""),
+                                            "skill": q.get("type", "general").upper().replace("_", " "),
+                                            "reasoning": q.get("reasoning", ""),
+                                            "timestamp": int(time.time() * 1000)
+                                        })
+                                    
+                                    # Send to Frontend
+                                    if frontend_questions:
+                                        await websocket.send_json({
+                                            "type": "suggested_questions",
+                                            "session_id": session_id,
+                                            "questions": frontend_questions
+                                        })
+                                    
+                                    # Save to Session State
+                                    async with state_lock:
+                                        if session_id in interview_sessions:
+                                            interview_sessions[session_id]["suggested_questions"].extend(frontend_questions)
+
+                        except Exception as e:
+                            logger.error(f"Error in OpenAI listener: {e}")
+                    
+                    # Start the listener task
+                    openai_task = asyncio.create_task(listen_to_openai())
+                    
+                    # Notify frontend that session is ready
                     await websocket.send_json({
                         "type": "session_started",
                         "session_id": session_id,
-                        "mode": mode
+                        "mode": "realtime"
                     })
+
                 except Exception as e:
-                    logger.debug(f"Failed to send session_started: {e}")
+                    logger.error(f"Failed to start OpenAI Realtime: {e}")
+                    await websocket.send_json({"type": "error", "message": "Failed to connect to AI Service"})
             
-            # ===== NEW TRANSCRIPT =====
-            elif message_type == "transcript":
-                if not session_id:
-                    await websocket.send_json({"type": "error", "message": "No active session"})
-                    continue
+            # ===== AUDIO CHUNK =====
+            elif message_type == "audio":
+                # Only process if service is connected
+                if openai_service:
+                    payload = data.get("payload")
+                    if payload:
+                        try:
+                            # It's base64 from frontend, convert to bytes -> send to service
+                            # (Service will re-encode to base64 for JSON payload, 
+                            # or handle raw bytes if using binary frame)
+                            # Our Service expects bytes.
+                            audio_bytes = base64.b64decode(payload)
+                            await openai_service.send_audio_chunk(audio_bytes)
+                        except Exception as e:
+                            logger.error(f"Audio processing error: {e}")
 
-                payload = data.get("payload", {})
-                speaker = payload.get("speaker", "").lower()
-                text = payload.get("text", "").strip()
-                timestamp = payload.get("timestamp", time.time())
-
-                if not text or speaker not in ["hr", "candidate"]:
-                    continue
-
-                # ✅ 不在这里广播，让buffer处理后再广播，避免重复
-
-                async with state_lock:
-                    session = interview_sessions[session_id]
-                    buffer = session["utterance_buffer"]
-
-                    current_time = time.time()
-
-                    # 如果之前commit过，就不要重复commit
-                    if buffer["current_speaker"] is None:
-                        # Buffer已经清空，这是新的一个block
-                        buffer["current_speaker"] = speaker
-                        buffer["current_text"] = text
-                        buffer["current_start_timestamp"] = timestamp
-                    elif speaker != buffer["current_speaker"]:
-                        # speaker 切换 → 先 commit 上一个
-                        if buffer["current_text"]:
-                            await commit_buffer(session_id, session, buffer)
-                        # 重置 buffer for new speaker
-                        buffer["current_speaker"] = speaker
-                        buffer["current_text"] = text
-                        buffer["current_start_timestamp"] = timestamp
-                    else:
-                        # 同 speaker → 累积
-                        buffer["current_text"] += " " + text
-
-                    buffer["last_activity_time"] = current_time
-
-            # ===== MANUAL AI ANALYSIS REQUEST =====
-            elif message_type == "request_analysis":
-                if not session_id:
-                    continue
-                
-                logger.info("🤖 Manual AI analysis requested")
-                
-                try:
-                    # ✅ First, commit any pending buffer content before analysis
-                    async with state_lock:
-                        if session_id in interview_sessions:
-                            session = interview_sessions[session_id]
-                            buffer = session["utterance_buffer"]
-                            if buffer["current_text"]:
-                                await commit_buffer(session_id, session, buffer)
-                                logger.info("📝 Committed buffer before analysis")
-                    
-                    # Get cached results (now up-to-date after commit)
-                    last_hr_question = None
-                    last_candidate_answer = None
-                    last_classification = None
-                    last_analysis = None
-                    
-                    async with state_lock:
-                        if session_id in interview_sessions:
-                            session = interview_sessions[session_id]
-                            last_hr_question = session.get("last_hr_question")
-                            last_candidate_answer = session.get("last_candidate_answer")
-                            last_classification = session.get("last_classification")
-                            last_analysis = session.get("last_analysis")
-                    
-                    # Send cached classification if exists
-                    if last_classification:
-                        await websocket.send_json({
-                            "type": "hr_question_classified",
-                            "session_id": session_id,
-                            "classification": last_classification
-                        })
-                        logger.info(f"🎯 Sent cached classification: {last_classification.get('question_type')}")
-                    
-                    # Send cached weak points if exists
-                    if last_analysis:
-                        weak_points = last_analysis.get("weak_points", [])
-                        if weak_points:
-                            async with state_lock:
-                                if session_id in interview_sessions:
-                                    interview_sessions[session_id]["weak_points"].extend(weak_points)
-                            
-                            await websocket.send_json({
-                                "type": "weak_points_updated",
-                                "session_id": session_id,
-                                "weak_points": weak_points
-                            })
-                            logger.info(f"📊 Sent cached analysis, score: {last_analysis.get('quality_score')}")
-                    
-                    # Generate follow-up questions (only OpenAI call needed)
-                    if last_hr_question and last_candidate_answer:
-                        analyzer = RealtimeAnalyzer()
-                        
-                        # Build a meaningful context for question generation
-                        weak_area_description = "the candidate's answer"
-                        if last_analysis:
-                            weak_points = last_analysis.get("weak_points", [])
-                            if weak_points:
-                                # Use the actual question/description from weak points
-                                first_weak = weak_points[0]
-                                component = first_weak.get("component", "")
-                                question = first_weak.get("question", "")
-                                weak_area_description = f"{component}: {question}" if question else component
-                        
-                        # Include more context in the question generation
-                        interview_context = f"""HR Question: {last_hr_question}
-Candidate Answer: {last_candidate_answer}
-Analysis Score: {last_analysis.get('quality_score', 'N/A') if last_analysis else 'N/A'}
-Focus Area: {weak_area_description}"""
-                        
-                        followups = await analyzer.generate_followup_questions(
-                            interview_context,
-                            weak_area_description,
-                            3
-                        )
-                        logger.info(f"💡 Generated {len(followups)} follow-up questions")
-                        
-                        # ✅ 记录AI生成到session中（包含时间）
-                        async with state_lock:
-                            if session_id in interview_sessions:
-                                if "ai_generations" not in interview_sessions[session_id]:
-                                    interview_sessions[session_id]["ai_generations"] = []
-                                
-                                interview_sessions[session_id]["ai_generations"].append({
-                                    "timestamp": int(time.time() * 1000),
-                                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),  # ✅ 可读时间
-                                    "hr_question": last_hr_question,
-                                    "candidate_answer": last_candidate_answer,
-                                    "classification": last_classification,
-                                    "analysis": last_analysis,
-                                    "generated_questions": followups
-                                })
-                        
-                        await websocket.send_json({
-                            "type": "suggested_questions",
-                            "session_id": session_id,
-                            "questions": followups
-                        })
-                    else:
-                        logger.warning("⚠️ No HR question or candidate answer to analyze")
-                        await websocket.send_json({
-                            "type": "analysis_error",
-                            "message": "No conversation to analyze yet"
-                        })
-                    
-                    # Send analysis complete notification
-                    await websocket.send_json({
-                        "type": "analysis_complete",
-                        "session_id": session_id
-                    })
-                    
-                except Exception as e:
-                    logger.error(f"❌ OpenAI analysis error: {e}")
-                    await websocket.send_json({
-                        "type": "analysis_error",
-                        "message": str(e)
-                    })
-            
-            # ===== ADD WEAK POINTS =====
-            elif message_type == "weak_points":
-                if not session_id:
-                    continue
-                
-                weak_points = data.get("weak_points", [])
-                
-                async with state_lock:
-                    if session_id in interview_sessions:
-                        interview_sessions[session_id]["weak_points"].extend(weak_points)
-                
-                logger.info(f"💡 Added {len(weak_points)} weak points")
-                
-                await broadcast_update({
-                    "type": "weak_points_updated",
-                    "session_id": session_id,
-                    "weak_points": weak_points
-                })
-            
-            # ===== PAUSE INTERVIEW =====
-            elif message_type == "pause":
-                if session_id:
-                    is_paused = True
-                    logger.info(f"⏸️  Interview paused: {session_id}")
-                    await websocket.send_json({
-                        "type": "interview_paused",
-                        "session_id": session_id
-                    })
-                continue
-            
-            # ===== RESUME INTERVIEW =====
-            elif message_type == "resume":
-                if session_id:
-                    is_paused = False
-                    logger.info(f"▶️  Interview resumed: {session_id}")
-                    await websocket.send_json({
-                        "type": "interview_resumed",
-                        "session_id": session_id
-                    })
-                continue
-            
             # ===== END INTERVIEW =====
-            elif message_type == "end":
+            elif message_type == "end" or message_type == "stop":
                 if session_id:
+                    logger.info(f"🛑 Ending interview: {session_id}")
+                    
+                    # SAVE TO FILE
                     async with state_lock:
                         if session_id in interview_sessions:
+                            # Update status
+                            interview_sessions[session_id]["status"] = "completed"
                             interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
                             
-                            # Save to JSON file
-                            output_dir = "interviews"
-                            os.makedirs(output_dir, exist_ok=True)
-                            
-                            filename = f"{output_dir}/{session_id}.json"
-                            with open(filename, "w") as f:
-                                json.dump(interview_sessions[session_id], f, indent=2)
-                            
-                            logger.info(f"💾 Interview saved: {filename}")
-                    
-                    await websocket.send_json({
-                        "type": "session_ended",
-                        "session_id": session_id
-                    })
-                    session_id = None
-    
+                            # Write JSON
+                            try:
+                                directory = "interviews"
+                                if not os.path.exists(directory):
+                                    os.makedirs(directory)
+                                
+                                filename = f"{directory}/{session_id}.json"
+                                with open(filename, 'w', encoding='utf-8') as f:
+                                    json.dump(interview_sessions[session_id], f, indent=2, ensure_ascii=False)
+                                logger.info(f"💾 Saved interview data to {filename}")
+                            except Exception as e:
+                                logger.error(f"Failed to save JSON: {e}")
+
+                    # Notify frontend
+                    await websocket.send_json({"type": "session_ended"})
+                    break
+
     except WebSocketDisconnect:
-        logger.info("🔌 WebSocket disconnected")
-        if session_id:
-            async with state_lock:
-                if session_id in interview_sessions:
-                    interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
-                    # Save on disconnect
-                    output_dir = "interviews"
-                    os.makedirs(output_dir, exist_ok=True)
-                    
-                    filename = f"{output_dir}/{session_id}.json"
-                    with open(filename, "w") as f:
-                        json.dump(interview_sessions[session_id], f, indent=2)
-    
+        logger.info("WebSocket disconnected")
     except Exception as e:
-        logger.debug(f"WebSocket exception: {type(e).__name__}")
-    
+        logger.error(f"WebSocket error: {e}")
     finally:
         if websocket in active_websockets:
             active_websockets.remove(websocket)
+        
+        # Cleanup
+        if openai_task:
+            openai_task.cancel()
+            try:
+                await openai_task
+            except asyncio.CancelledError:
+                pass
+        
+        if openai_service:
+            await openai_service.disconnect()

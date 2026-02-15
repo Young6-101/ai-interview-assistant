@@ -1,184 +1,163 @@
-import React, { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import React, { createContext, useContext, useState, type ReactNode } from 'react';
 
-export type InterviewState = 'NOT_STARTED' | 'RUNNING' | 'PAUSED' | 'ENDED';
-
-export interface Transcript {
-  id: string;
-  speaker: 'HR' | 'CANDIDATE';
-  text: string;
-  timestamp: number;
-  isFinal: boolean;
+// Types
+export interface TranscriptSegment {
+  id: string
+  speaker: 'HR' | 'Candidate' | 'CANDIDATE' // Allow both cases
+  text: string
+  timestamp: number
+  isFinal: boolean
+  time?: string
 }
+
+// Alias for backward compatibility if needed, or just replace usage
+export type Transcript = TranscriptSegment;
 
 export interface WeakPoint {
   id: string;
-  category: string;
-  description: string;
-  details?: string;
+  text: string;
   timestamp: number;
 }
 
 export interface SuggestedQuestion {
-  id: string;
-  text: string;
-  skill: string;
-  timestamp: number;
+  id: string
+  text: string
+  skill: string
+  timestamp: number
+  reasoning?: string
 }
 
 export interface Topic {
-  id: string;
   name: string;
-  timestamp: number;
+  duration: number;
   updated?: number;
+  status?: 'active' | 'completed' | 'pending';
 }
 
-interface InterviewContextType {
-  // Interview Control
-  interviewState: InterviewState;
-  setInterviewState: (state: InterviewState) => void;
+export type InterviewState = 'IDLE' | 'RUNNING' | 'PAUSED' | 'ENDED' | 'COMPLETED'
 
-  // Data
-  transcripts: Transcript[];
-  addTranscript: (transcript: Transcript) => void;
-  updateTranscript: (id: string, updates: Partial<Transcript>) => void;
+export interface InterviewContextType {
+  // Core State
+  interviewState: InterviewState
+  setInterviewState: (state: InterviewState) => void
+  transcripts: TranscriptSegment[]
+  addTranscript: (segment: TranscriptSegment) => void
+  suggestedQuestions: SuggestedQuestion[]
+  setSuggestedQuestions: (questions: SuggestedQuestion[]) => void
+  addSuggestedQuestion: (question: SuggestedQuestion) => void
 
-  weakPoints: WeakPoint[];
-  addWeakPoint: (point: WeakPoint) => void;
-  updateWeakPoint: (id: string, updates: Partial<WeakPoint>) => void;
+  // User Session
+  candidateName: string
+  token: string | null
+  interviewMode: string | null
+  isAuthenticated: boolean
+  candidateId: string
+  setCandidateId: (id: string) => void
 
-  suggestedQuestions: SuggestedQuestion[];
-  addSuggestedQuestion: (question: SuggestedQuestion) => void;
-  clearSuggestedQuestions: () => void;
+  // Legacy / Extended (needed for compatibility or unused but passed)
+  updateTranscript: (id: string, updates: Partial<TranscriptSegment>) => void
+  weakPoints: WeakPoint[]
+  addWeakPoint: (point: WeakPoint) => void
+  updateWeakPoint: (id: string, updates: Partial<WeakPoint>) => void
+  clearSuggestedQuestions: () => void
+  topics: Topic[]
+  addTopic: (topic: Topic) => void
 
-  topics: Topic[];
-  addTopic: (topic: Topic) => void;
-  updateTopic: (id: string, updates: Partial<Topic>) => void;
+  // UI / Metadata Setters (Placeholders)
+  setCandidateName: (name: string) => void
+  setToken: (token: string) => void
+  setInterviewMode: (mode: string) => void
 
-  // WebSocket Status
-  isWebSocketConnected: boolean;
-  setWebSocketConnected: (connected: boolean) => void;
-
-  // Audio Status
-  isHrMicConnected: boolean;
-  setHrMicConnected: (connected: boolean) => void;
-  isCandidateMicConnected: boolean;
-  setCandidateMicConnected: (connected: boolean) => void;
-
-  // Meeting Room Status
-  isMeetingRoomConnected: boolean;
-  setMeetingRoomConnected: (connected: boolean) => void;
-
-  // UI state
-  showFullscreen: boolean;
-  setShowFullscreen: (show: boolean) => void;
-
-  // 🔹 User Session State (Memory Only)
-  candidateName: string;
-  setCandidateName: (name: string) => void;
-  token: string;
-  setToken: (token: string) => void;
-  interviewMode: string;
-  setInterviewMode: (mode: string) => void;
-  candidateId: string;
-  setCandidateId: (id: string) => void;
+  // Previously existed, keeping for safety if any other file uses it
+  showFullscreen?: boolean
+  setShowFullscreen?: (show: boolean) => void
 }
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
 
 export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [interviewState, setInterviewState] = useState<InterviewState>('NOT_STARTED');
-  const [transcripts, setTranscripts] = useState<Transcript[]>([]);
-  const [weakPoints, setWeakPoints] = useState<WeakPoint[]>([]);
+  const [interviewState, setInterviewState] = useState<InterviewState>('IDLE');
+  const [transcripts, setTranscripts] = useState<TranscriptSegment[]>([]);
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([]);
+  // User Session State
+  const [candidateName, setCandidateNameState] = useState<string>(localStorage.getItem('username') || 'Candidate');
+  const [token, setTokenState] = useState<string | null>(localStorage.getItem('token'));
+  const [interviewMode, setInterviewModeState] = useState<string | null>(localStorage.getItem('mode') || 'realtime');
+  const [candidateId, setCandidateId] = useState<string>('');
+
+  const isAuthenticated = !!token;
+
+  // Legacy / Placeholder state
+  const [weakPoints, setWeakPoints] = useState<WeakPoint[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [isWebSocketConnected, setWebSocketConnected] = useState(false);
-  const [isHrMicConnected, setHrMicConnected] = useState(false);
-  const [isCandidateMicConnected, setCandidateMicConnected] = useState(false);
-  const [isMeetingRoomConnected, setMeetingRoomConnected] = useState(false);
-  const [showFullscreen, setShowFullscreen] = useState(false);
 
-  // 🔹 User Session State
-  const [candidateName, setCandidateName] = useState('');
-  const [token, setToken] = useState('');
-  const [interviewMode, setInterviewMode] = useState('mode1');
-  const [candidateId, setCandidateId] = useState('');
+  const addTranscript = (t: TranscriptSegment) => {
+    setTranscripts(prev => [...prev, t]);
+  };
 
-  const addTranscript = useCallback((transcript: Transcript) => {
-    setTranscripts((prev) => [...prev, transcript]);
-  }, []);
+  const updateTranscript = (id: string, updates: Partial<TranscriptSegment>) => {
+    setTranscripts(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  }
 
-  const updateTranscript = useCallback((id: string, updates: Partial<Transcript>) => {
-    setTranscripts((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
-    );
-  }, []);
+  const addSuggestedQuestion = (q: SuggestedQuestion) => {
+    setSuggestedQuestions(prev => [...prev, q]);
+  };
 
-  const addWeakPoint = useCallback((point: WeakPoint) => {
-    setWeakPoints((prev) => [...prev, point]);
-  }, []);
-
-  const updateWeakPoint = useCallback((id: string, updates: Partial<WeakPoint>) => {
-    setWeakPoints((prev) =>
-      prev.map((wp) => (wp.id === id ? { ...wp, ...updates } : wp))
-    );
-  }, []);
-
-  const addSuggestedQuestion = useCallback((question: SuggestedQuestion) => {
-    setSuggestedQuestions((prev) => [...prev, question]);
-  }, []);
-
-  const clearSuggestedQuestions = useCallback(() => {
+  const clearSuggestedQuestions = () => {
     setSuggestedQuestions([]);
-  }, []);
+  }
 
-  const addTopic = useCallback((topic: Topic) => {
-    setTopics((prev) => [...prev, topic]);
-  }, []);
+  // Legacy Handlers
+  const addWeakPoint = (wp: WeakPoint) => setWeakPoints(prev => [...prev, wp]);
+  const updateWeakPoint = (id: string, updates: Partial<WeakPoint>) => setWeakPoints(prev => prev.map(wp => wp.id === id ? { ...wp, ...updates } : wp));
 
-  const updateTopic = useCallback((id: string, updates: Partial<Topic>) => {
-    setTopics((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, ...updates } : t))
-    );
-  }, []);
+  const addTopic = (t: Topic) => setTopics(prev => [...prev, t]);
 
-  const value: InterviewContextType = {
-    interviewState,
-    setInterviewState,
-    transcripts,
-    addTranscript,
-    updateTranscript,
-    weakPoints,
-    addWeakPoint,
-    updateWeakPoint,
-    suggestedQuestions,
-    addSuggestedQuestion,
-    clearSuggestedQuestions,
-    topics,
-    addTopic,
-    updateTopic,
-    isWebSocketConnected,
-    setWebSocketConnected,
-    isHrMicConnected,
-    setHrMicConnected,
-    isCandidateMicConnected,
-    setCandidateMicConnected,
-    isMeetingRoomConnected,
-    setMeetingRoomConnected,
-    showFullscreen,
-    setShowFullscreen,
-    // User Session State
-    candidateName,
-    setCandidateName,
-    token,
-    setToken,
-    interviewMode,
-    setInterviewMode,
-    candidateId,
-    setCandidateId,
+  const setCandidateName = (name: string) => {
+    localStorage.setItem('username', name);
+    setCandidateNameState(name);
+  };
+
+  const setToken = (newToken: string) => {
+    localStorage.setItem('token', newToken);
+    setTokenState(newToken);
+  };
+
+  const setInterviewMode = (mode: string) => {
+    localStorage.setItem('mode', mode);
+    setInterviewModeState(mode);
   };
 
   return (
-    <InterviewContext.Provider value={value}>
+    <InterviewContext.Provider value={{
+      interviewState,
+      setInterviewState,
+      transcripts,
+      addTranscript,
+      suggestedQuestions,
+      setSuggestedQuestions,
+      addSuggestedQuestion,
+      candidateName,
+      token,
+      interviewMode,
+      isAuthenticated,
+      candidateId,
+      setCandidateId,
+
+      // Legacy
+      updateTranscript,
+      weakPoints,
+      addWeakPoint,
+      updateWeakPoint,
+      clearSuggestedQuestions,
+      topics,
+      addTopic,
+
+      // Metadata setters
+      setCandidateName,
+      setToken,
+      setInterviewMode
+    }}>
       {children}
     </InterviewContext.Provider>
   );
@@ -186,8 +165,8 @@ export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children 
 
 export const useInterview = () => {
   const context = useContext(InterviewContext);
-  if (context === undefined) {
-    throw new Error('useInterview must be used within InterviewProvider');
+  if (!context) {
+    throw new Error('useInterview must be used within an InterviewProvider');
   }
   return context;
 };
