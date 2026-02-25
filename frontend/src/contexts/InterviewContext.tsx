@@ -23,6 +23,7 @@ export interface SuggestedQuestion {
   id: string
   text: string
   skill: string
+  type?: 'follow_up' | 'move_on' | 'revert'
   timestamp: number
   reasoning?: string
 }

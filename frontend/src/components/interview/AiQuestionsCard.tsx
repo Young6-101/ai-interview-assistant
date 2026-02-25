@@ -8,8 +8,15 @@ interface AiQuestionsCardProps {
     onGenerateQuestions: () => void;
 }
 
+const TYPE_CONFIG: Record<string, { color: string; label: string; emoji: string; bg: string }> = {
+    follow_up: { color: '#3b82f6', label: 'FOLLOW-UP', emoji: '🔽', bg: '#eff6ff' },
+    move_on: { color: '#f59e0b', label: 'MOVE-ON', emoji: '➡️', bg: '#fffbeb' },
+    revert: { color: '#8b5cf6', label: 'REVERT', emoji: '🔙', bg: '#f5f3ff' },
+};
+
 const SuggestedQuestionItem: React.FC<{ question: SuggestedQuestion }> = ({ question }) => {
     const [expanded, setExpanded] = useState(false);
+    const config = TYPE_CONFIG[question.type || ''] || { color: '#3b82f6', label: question.skill || 'GENERAL', emoji: '❓', bg: '#fff' };
 
     return (
         <div
@@ -18,24 +25,29 @@ const SuggestedQuestionItem: React.FC<{ question: SuggestedQuestion }> = ({ ques
             style={{
                 marginBottom: '14px',
                 padding: '16px',
-                background: '#fff',
+                background: config.bg,
                 borderRadius: '12px',
                 border: '1px solid #e2e8f0',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                borderLeft: '5px solid #3b82f6'
+                borderLeft: `5px solid ${config.color}`
             }}
         >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                 <span style={{
                     fontSize: '12px',
                     fontWeight: 700,
-                    color: '#3b82f6',
+                    color: config.color,
                     textTransform: 'uppercase',
-                    display: 'block'
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    background: `${config.color}15`,
                 }}>
-                    {question.skill || 'GENERAL'}
+                    {config.emoji} {config.label}
                 </span>
                 <span style={{ fontSize: '12px', color: '#94a3b8' }}>{new Date(question.timestamp).toLocaleTimeString()}</span>
             </div>
@@ -96,20 +108,27 @@ export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, int
                     style={{
                         width: '100%',
                         padding: '12px',
-                        background: '#f1f5f9',
-                        border: '1px solid #cbd5e1',
+                        background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+                        border: 'none',
                         borderRadius: '8px',
-                        color: '#475569',
+                        color: '#fff',
                         fontSize: '16px',
                         fontWeight: 600,
                         cursor: 'pointer',
                         marginBottom: isWarningVisible() ? '16px' : '0',
-                        transition: 'background 0.2s',
+                        transition: 'box-shadow 0.2s ease, transform 0.15s ease',
+                        letterSpacing: '0.02em',
                     }}
-                    onMouseOver={(e) => e.currentTarget.style.background = '#e2e8f0'}
-                    onMouseOut={(e) => e.currentTarget.style.background = '#f1f5f9'}
+                    onMouseOver={(e) => {
+                        e.currentTarget.style.boxShadow = '0 4px 20px rgba(124, 58, 237, 0.55)';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                    }}
+                    onMouseOut={(e) => {
+                        e.currentTarget.style.boxShadow = 'none';
+                        e.currentTarget.style.transform = 'translateY(0)';
+                    }}
                 >
-                    Click to generate questions
+                    ✨ Generate Questions
                 </button>
 
                 {/* Yellow Warning Box */}

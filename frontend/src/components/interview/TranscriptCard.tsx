@@ -40,7 +40,7 @@ export const TranscriptCard: React.FC<TranscriptCardProps> = ({ transcripts }) =
                             fontSize: '14px',
                             textTransform: 'uppercase'
                         }}>
-                            {t.speaker === 'HR' ? 'HR' : 'Candidate'}
+                            {t.speaker === 'HR' ? 'Recruiter' : 'Candidate'}
                         </span>
                         {t.text === '...' ? (
                             <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Speaking...</span>

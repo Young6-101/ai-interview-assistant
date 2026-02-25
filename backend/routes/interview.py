@@ -209,12 +209,20 @@ async def websocket_endpoint(websocket: WebSocket):
                             
                             logger.info(f"💡 AI Generated {len(questions_list)} questions")
                             
+                            TYPE_LABELS = {
+                                "follow_up": "🔽 FOLLOW-UP",
+                                "move_on": "➡️ MOVE-ON",
+                                "revert": "🔙 REVERT",
+                            }
+                            
                             frontend_questions = []
                             for i, q in enumerate(questions_list):
+                                q_type = q.get("type", "follow_up")
                                 frontend_questions.append({
                                     "id": f"q_{int(time.time())}_{i}",
                                     "text": q.get("question", ""),
-                                    "skill": q.get("type", "general").upper().replace("_", " "),
+                                    "type": q_type,
+                                    "skill": TYPE_LABELS.get(q_type, q_type.upper().replace("_", " ")),
                                     "reasoning": q.get("reasoning", ""),
                                     "timestamp": int(time.time() * 1000)
                                 })
