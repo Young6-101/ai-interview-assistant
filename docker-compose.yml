@@ -13,7 +13,6 @@ services:
       - "127.0.0.1:8000:8000"
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ASSEMBLYAI_API_KEY=${ASSEMBLYAI_API_KEY}
     volumes:
       # Persist interview data
       - ./interviews:/app/interviews

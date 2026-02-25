@@ -9,19 +9,22 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # Hardcoded JD for V2-Lite (shared by all instances)
-JD_TEXT = """**Job Title: Senior Software Engineer (AI/ML Focus)**
-**Responsibilities:**
-- Design, build, and maintain high-performance, reusable, and reliable Python and TypeScript code.
-- Integrate third-party AI services (OpenAI, Anthropic) into core product workflows.
-- Optimize real-time audio processing pipelines for low latency.
-- Collaborate with cross-functional teams to define, design, and ship new features.
-
+JD_TEXT = """**Job Title: Research Assistant – HCI Lab**
 **Requirements:**
-- 5+ years of experience in software engineering.
-- Proficient in Python (FastAPI) and React (TypeScript).
-- Experience with WebSocket APIs and real-time data streaming.
-- Strong understanding of system design and scalable architecture.
-- Bonus: Experience with WebRTC or Audio Processing."""
+- Current/recent student or graduate in HCI, Computer Science, Design, Psychology or related field
+- Practical experience or strong training in user research / UX methods
+- Comfortable with user study facilitation (interviews/tests/surveys)
+- Prototyping skills (Figma / Adobe XD / Sketch or similar)
+- Data analysis capability:
+  • Qualitative: thematic analysis, coding
+  • AND/OR quantitative: basic stats in Python / R / SPSS
+- Solid academic/technical writing ability
+- Available ≥20 hours/week
+
+**Bonus:**
+- Prior research project or lab experience
+- Familiarity with NVivo, PyTorch, Unity, participatory design
+- Interest in mental health & technology, inclusive design, or AI ethics"""
 
 
 class OpenAIRealtimeService:

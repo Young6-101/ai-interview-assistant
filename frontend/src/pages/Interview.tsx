@@ -11,25 +11,29 @@ import { JobDescriptionCard } from '../components/interview/JobDescriptionCard'
 const VITE_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 // Hardcoded JD Content
-const jdContent = `Software Engineer (Full Stack)
+const jdContent = `Research Assistant – HCI Lab
 
 Requirements:
-- 3+ years of experience with React, TypeScript, and Python.
-- Strong understanding of WebSocket + Realtime Audio processing.
-- Experience with OpenAI API (Realtime / GPT-4o).
-- Ability to write clean, maintainable code.
-- Familiarity with Cloud deployment (Docker, Nginx, Azure).
+- Current/recent student or graduate in HCI, Computer Science, Design, Psychology or related field
+- Practical experience or strong training in user research / UX methods
+- Comfortable with user study facilitation (interviews/tests/surveys)
+- Prototyping skills (Figma / Adobe XD / Sketch or similar)
+- Data analysis capability:
+  • Qualitative: thematic analysis, coding
+  • AND/OR quantitative: basic stats in Python / R / SPSS
+- Solid academic/technical writing ability
+- Available ≥20 hours/week
 
-Responsibilities:
-- Build and maintain the core interview assistant platform.
-- optimize audio streaming latency.
-- Implement new AI-driven features.`
+**Bonus:**
+- Prior research project or lab experience
+- Familiarity with NVivo, PyTorch, Unity, participatory design
+- Interest in mental health & technology, inclusive design, or AI ethics  `
 
 export const Interview: React.FC = () => {
   const context = useInterview()
   const navigate = useNavigate()
   const [error, setError] = useState<string>('')
-  
+
   // Use ref to track interview state for audio callback (avoids stale closure)
   const interviewStateRef = React.useRef(context.interviewState)
   React.useEffect(() => {
@@ -42,7 +46,7 @@ export const Interview: React.FC = () => {
     token: context.token || 'temp_token',
     onMessage: (msg: any) => {
       console.log('📩 WS Message:', msg.type, msg);  // Debug log
-      
+
       if (msg.type === 'transcript_update') {
         const payload = msg.payload
         console.log('📝 Adding transcript:', payload);  // Debug log
@@ -79,11 +83,11 @@ export const Interview: React.FC = () => {
   // 2. Audio Hook - Separate mic (HR) and screen (Candidate) audio
   const micChunkCountRef = React.useRef(0);
   const screenChunkCountRef = React.useRef(0);
-  
+
   const { startStream, stopStream, isStreaming, isSharing, screenStream, startScreenShare } = useMicrophoneStream({
     onMicAudioData: (base64Data) => {
       const currentState = interviewStateRef.current;
-      
+
       if (isConnected && currentState === 'RUNNING') {
         sendMessage({ type: 'audio_hr', payload: base64Data })
         micChunkCountRef.current++;
@@ -94,7 +98,7 @@ export const Interview: React.FC = () => {
     },
     onScreenAudioData: (base64Data) => {
       const currentState = interviewStateRef.current;
-      
+
       if (isConnected && currentState === 'RUNNING') {
         sendMessage({ type: 'audio_candidate', payload: base64Data })
         screenChunkCountRef.current++;
@@ -119,7 +123,7 @@ export const Interview: React.FC = () => {
       disconnect()
       stopStream()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // Empty deps - only run cleanup on unmount
 
   // --- Handlers ---
@@ -129,13 +133,13 @@ export const Interview: React.FC = () => {
       setError("WebSocket not connected")
       return
     }
-    
+
     try {
       // 1. Start Audio (if not already started)
       if (!isStreaming) {
         await startStream()
       }
-      
+
       // 2. Tell Backend to Start Session with Metadata
       sendMessage({
         type: 'start',
@@ -143,11 +147,11 @@ export const Interview: React.FC = () => {
         username: context.candidateName,
         mode: context.interviewMode
       })
-      
+
       // 3. Set state to RUNNING - this enables audio sending
       context.setInterviewState('RUNNING')
       console.log('✅ Interview started, state set to RUNNING')
-      
+
     } catch (e: any) {
       setError(e.message)
     }
