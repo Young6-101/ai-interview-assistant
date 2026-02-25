@@ -29,24 +29,45 @@ export const Interview: React.FC = () => {
   const context = useInterview()
   const navigate = useNavigate()
   const [error, setError] = useState<string>('')
+  
+  // Use ref to track interview state for audio callback (avoids stale closure)
+  const interviewStateRef = React.useRef(context.interviewState)
+  React.useEffect(() => {
+    interviewStateRef.current = context.interviewState
+  }, [context.interviewState])
 
   // 1. WebSocket Hook (Lite)
   const { isConnected, sendMessage, disconnect } = useWebSocketLite({
     url: `${VITE_API_URL}/ws`,
     token: context.token || 'temp_token',
     onMessage: (msg: any) => {
+      console.log('📩 WS Message:', msg.type, msg);  // Debug log
+      
       if (msg.type === 'transcript_update') {
         const payload = msg.payload
+        console.log('📝 Adding transcript:', payload);  // Debug log
         context.addTranscript({
-          id: `t_${payload.timestamp}`,
-          speaker: payload.speaker === 'candidate' ? 'Candidate' : 'HR',
+          id: payload.id || `t_${payload.timestamp}`,
+          // speaker from backend: "hr" or "candidate"
+          speaker: payload.speaker === 'hr' ? 'HR' : 'Candidate',
           text: payload.text,
           timestamp: payload.timestamp,
           isFinal: payload.is_final
         })
+      } else if (msg.type === 'transcript_replace') {
+        // Replace an interim "Speaking..." entry with the final transcript
+        const payload = msg.payload
+        console.log('📝 Replacing transcript:', payload);  // Debug log
+        context.updateTranscript(payload.replace_id, {
+          speaker: payload.speaker === 'hr' ? 'HR' : 'Candidate',
+          text: payload.text,
+          timestamp: payload.timestamp,
+          isFinal: true
+        })
       } else if (msg.type === 'suggested_questions') {
         // Batch update questions
         if (msg.questions && Array.isArray(msg.questions)) {
+          console.log('💡 Adding questions:', msg.questions);  // Debug log
           context.setSuggestedQuestions(msg.questions)
         }
       } else if (msg.type === 'error') {
@@ -55,17 +76,31 @@ export const Interview: React.FC = () => {
     }
   })
 
-  // 2. Audio Hook
+  // 2. Audio Hook - Separate mic (HR) and screen (Candidate) audio
+  const micChunkCountRef = React.useRef(0);
+  const screenChunkCountRef = React.useRef(0);
+  
   const { startStream, stopStream, isStreaming, isSharing, screenStream, startScreenShare } = useMicrophoneStream({
-    onAudioData: (base64Data) => {
-      // Only send if we are "RUNNING" (User clicked Start Interview)
-      // OR... technically we can stream audio even if interview hasn't "started" logically,
-      // but usually we want to sync them.
-      // However, for "Mic Test" we just want local stream.
-      // The backend will only process if session is active.
-
-      if (isConnected && context.interviewState === 'RUNNING') {
-        sendMessage({ type: 'audio', payload: base64Data })
+    onMicAudioData: (base64Data) => {
+      const currentState = interviewStateRef.current;
+      
+      if (isConnected && currentState === 'RUNNING') {
+        sendMessage({ type: 'audio_hr', payload: base64Data })
+        micChunkCountRef.current++;
+        if (micChunkCountRef.current % 50 === 0) {
+          console.log(`🎤 HR audio chunks sent: ${micChunkCountRef.current}`);
+        }
+      }
+    },
+    onScreenAudioData: (base64Data) => {
+      const currentState = interviewStateRef.current;
+      
+      if (isConnected && currentState === 'RUNNING') {
+        sendMessage({ type: 'audio_candidate', payload: base64Data })
+        screenChunkCountRef.current++;
+        if (screenChunkCountRef.current % 50 === 0) {
+          console.log(`🖥️ Candidate audio chunks sent: ${screenChunkCountRef.current}`);
+        }
       }
     },
     onError: (err) => setError(err)
@@ -76,21 +111,31 @@ export const Interview: React.FC = () => {
     if (!context.isAuthenticated) {
       navigate('/')
     }
+  }, [context.isAuthenticated, navigate])
+
+  // Cleanup on unmount only
+  useEffect(() => {
     return () => {
       disconnect()
       stopStream()
     }
-  }, [context.isAuthenticated, navigate, disconnect, stopStream])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Empty deps - only run cleanup on unmount
 
   // --- Handlers ---
 
-  const handleStartInterview = () => {
+  const handleStartInterview = async () => {
     if (!isConnected) {
       setError("WebSocket not connected")
       return
     }
-    // 1. Start Audio (if not already)
-    startStream().then(() => {
+    
+    try {
+      // 1. Start Audio (if not already started)
+      if (!isStreaming) {
+        await startStream()
+      }
+      
       // 2. Tell Backend to Start Session with Metadata
       sendMessage({
         type: 'start',
@@ -98,8 +143,14 @@ export const Interview: React.FC = () => {
         username: context.candidateName,
         mode: context.interviewMode
       })
+      
+      // 3. Set state to RUNNING - this enables audio sending
       context.setInterviewState('RUNNING')
-    }).catch(e => setError(e.message))
+      console.log('✅ Interview started, state set to RUNNING')
+      
+    } catch (e: any) {
+      setError(e.message)
+    }
   }
 
   const handleConfirmEndInterview = () => {

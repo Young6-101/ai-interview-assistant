@@ -10,9 +10,19 @@ interface UseWebSocketOptions {
 export const useWebSocketLite = ({ url, token, onMessage }: UseWebSocketOptions) => {
     const [isConnected, setIsConnected] = useState(false);
     const wsRef = useRef<WebSocket | null>(null);
+    // Use ref to store the callback to avoid re-creating the connect function
+    const onMessageRef = useRef(onMessage);
+    
+    // Keep the ref updated with the latest callback
+    useEffect(() => {
+        onMessageRef.current = onMessage;
+    }, [onMessage]);
 
     const connect = useCallback(() => {
-        if (wsRef.current?.readyState === WebSocket.OPEN) return;
+        if (wsRef.current?.readyState === WebSocket.OPEN || 
+            wsRef.current?.readyState === WebSocket.CONNECTING) {
+            return;
+        }
 
         const fullUrl = `${url}?token=${token}`;
         console.log('Connecting to WS:', fullUrl);
@@ -22,13 +32,13 @@ export const useWebSocketLite = ({ url, token, onMessage }: UseWebSocketOptions)
         socket.onopen = () => {
             console.log('✅ WS Connected');
             setIsConnected(true);
-            // Send ping or init if needed
         };
 
         socket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                onMessage(data);
+                // Use the ref to get the latest callback
+                onMessageRef.current(data);
             } catch (e) {
                 console.error('WS Parse Error:', e);
             }
@@ -45,7 +55,7 @@ export const useWebSocketLite = ({ url, token, onMessage }: UseWebSocketOptions)
         };
 
         wsRef.current = socket;
-    }, [url, token, onMessage]);
+    }, [url, token]); // Removed onMessage from dependencies
 
     const disconnect = useCallback(() => {
         if (wsRef.current) {
@@ -64,11 +74,11 @@ export const useWebSocketLite = ({ url, token, onMessage }: UseWebSocketOptions)
         }
     }, []);
 
-    // Auto connect on mount
+    // Auto connect on mount - only depend on url and token
     useEffect(() => {
         connect();
         return () => disconnect();
-    }, [connect, disconnect]);
+    }, [url, token]); // Only reconnect when url or token changes
 
     return { isConnected, sendMessage, disconnect, connect };
 };

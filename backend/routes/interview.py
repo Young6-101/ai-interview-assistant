@@ -1,5 +1,5 @@
 
-"""Interview routes - REST API and WebSocket (V2-Lite: OpenAI Realtime Only)"""
+"""Interview routes - REST API and WebSocket (V2: Dual OpenAI Realtime Connections)"""
 
 import os
 import json
@@ -12,7 +12,6 @@ from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from utils.auth import verify_token
-# from utils.broadcast import broadcast_update # Not used in lite mode
 from core.state import interview_sessions, active_websockets, state_lock
 from services.openai_realtime import OpenAIRealtimeService
 
@@ -46,13 +45,15 @@ async def create_interview(request: CreateInterviewRequest):
     
     return {"interview_id": interview_id, "status": "created"}
 
-# ============ WEBSOCKET ENDPOINT (REALTIME ONLY) ============
+# ============ WEBSOCKET ENDPOINT (DUAL REALTIME CONNECTIONS) ============
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """
-    WebSocket endpoint for real-time interview (V2-Lite)
-    Connects frontend directly to OpenAI Realtime Service via backend proxy.
+    WebSocket endpoint for real-time interview.
+    Uses TWO OpenAI Realtime connections:
+    - hr_service: For HR/interviewer audio (microphone)
+    - candidate_service: For candidate audio (screen share)
     """
     try:
         await websocket.accept()
@@ -63,8 +64,10 @@ async def websocket_endpoint(websocket: WebSocket):
         return
 
     session_id = None
-    openai_service = None
-    openai_task = None
+    hr_service = None
+    candidate_service = None
+    hr_task = None
+    candidate_task = None
     
     try:
         while True:
@@ -82,8 +85,11 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # ===== GENERATE QUESTIONS =====
             if message_type == "generate_questions":
-                if openai_service:
-                    await openai_service.send_text_instruction("Based on the conversation so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool.")
+                # Send to candidate service (which has tools enabled)
+                if candidate_service:
+                    await candidate_service.send_text_instruction(
+                        "Based on the conversation so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
+                    )
                     await websocket.send_json({"type": "info", "message": "Generating questions..."})
                 continue
 
@@ -101,8 +107,6 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Initialize Session State
                 input_username = data.get("username")
                 input_mode = data.get("mode", "realtime")
-                
-                # Use frontend username if provided, otherwise token username
                 final_username = input_username if input_username else username
                 
                 async with state_lock:
@@ -117,107 +121,167 @@ async def websocket_endpoint(websocket: WebSocket):
                 
                 logger.info(f"✨ Interview started: {session_id}")
 
-                # Initialize OpenAI Realtime Service
+                # Initialize TWO OpenAI Realtime Services
                 try:
-                    openai_service = OpenAIRealtimeService()
-                    await openai_service.connect()
-                    logger.info("🚀 OpenAI Realtime Service Connected")
+                    # HR Service: transcribe only, no tools
+                    hr_service = OpenAIRealtimeService(speaker="hr", enable_tools=False)
+                    await hr_service.connect()
+                    logger.info("🚀 HR OpenAI Realtime Service Connected")
                     
-                    # Background listener: OpenAI -> Frontend
-                    async def listen_to_openai():
-                        try:
-                            # Iterate over events yielded by the service
-                            async for event in openai_service.listen():
-                                
-                                # 1. TRANSCRIPT (Final)
-                                if event["type"] == "transcript":
-                                    text = event.get("text", "")
-                                    timestamp = int(time.time() * 1000)
-                                    
-                                    # Send to Frontend
-                                    await websocket.send_json({
-                                        "type": "transcript_update",
-                                        "session_id": session_id,
-                                        "payload": {
-                                            "speaker": "candidate",
-                                            "text": text,
-                                            "timestamp": timestamp,
-                                            "is_final": True
-                                        }
+                    # Candidate Service: transcribe + generate questions
+                    candidate_service = OpenAIRealtimeService(speaker="candidate", enable_tools=True)
+                    await candidate_service.connect()
+                    logger.info("🚀 Candidate OpenAI Realtime Service Connected")
+                    
+                    # Track speaking state for interim display
+                    speaking_state = {"hr": None, "candidate": None}
+                    
+                    # Helper function to handle events from either service
+                    async def handle_event(event, service_name):
+                        nonlocal speaking_state
+                        
+                        # Handle speech_started - show "Speaking..." placeholder
+                        if event["type"] == "speech_started":
+                            speaker = event.get("speaker", "candidate")
+                            timestamp = int(time.time() * 1000)
+                            interim_id = f"speaking_{speaker}_{timestamp}"
+                            speaking_state[speaker] = interim_id
+                            
+                            await websocket.send_json({
+                                "type": "transcript_update",
+                                "session_id": session_id,
+                                "payload": {
+                                    "speaker": speaker,
+                                    "text": "...",  # Placeholder for "Speaking..."
+                                    "timestamp": timestamp,
+                                    "is_final": False,
+                                    "id": interim_id
+                                }
+                            })
+                            return
+                        
+                        if event["type"] == "transcript":
+                            text = event.get("text", "")
+                            speaker = event.get("speaker", "candidate")
+                            timestamp = int(time.time() * 1000)
+                            
+                            # Check if we need to replace an interim "speaking" entry
+                            interim_id = speaking_state.get(speaker)
+                            if interim_id:
+                                # Send update to replace the interim entry
+                                await websocket.send_json({
+                                    "type": "transcript_replace",
+                                    "session_id": session_id,
+                                    "payload": {
+                                        "replace_id": interim_id,
+                                        "speaker": speaker,
+                                        "text": text,
+                                        "timestamp": timestamp,
+                                        "is_final": True
+                                    }
+                                })
+                                speaking_state[speaker] = None
+                            else:
+                                # Send to Frontend (no interim to replace)
+                                await websocket.send_json({
+                                    "type": "transcript_update",
+                                    "session_id": session_id,
+                                    "payload": {
+                                        "speaker": speaker,
+                                        "text": text,
+                                        "timestamp": timestamp,
+                                        "is_final": True
+                                    }
+                                })
+                            
+                            # Save to Session State
+                            async with state_lock:
+                                if session_id in interview_sessions:
+                                    interview_sessions[session_id]["transcripts"].append({
+                                        "speaker": speaker,
+                                        "text": text,
+                                        "timestamp": timestamp
                                     })
-                                    
-                                    # Save to Session State
-                                    async with state_lock:
-                                        if session_id in interview_sessions:
-                                            interview_sessions[session_id]["transcripts"].append({
-                                                "speaker": "candidate",
-                                                "text": text,
-                                                "timestamp": timestamp
-                                            })
 
-                                # 2. SUGGESTED QUESTIONS (Function Call)
-                                elif event["type"] == "analysis":
-                                    payload = event.get("payload", {})
-                                    questions_list = payload.get("suggestions", [])
-                                    
-                                    logger.info(f"💡 AI Generated {len(questions_list)} questions")
-                                    
-                                    # Format for frontend
-                                    frontend_questions = []
-                                    for i, q in enumerate(questions_list):
-                                        frontend_questions.append({
-                                            "id": f"q_{int(time.time())}_{i}",
-                                            "text": q.get("question", ""),
-                                            "skill": q.get("type", "general").upper().replace("_", " "),
-                                            "reasoning": q.get("reasoning", ""),
-                                            "timestamp": int(time.time() * 1000)
-                                        })
-                                    
-                                    # Send to Frontend
-                                    if frontend_questions:
-                                        await websocket.send_json({
-                                            "type": "suggested_questions",
-                                            "session_id": session_id,
-                                            "questions": frontend_questions
-                                        })
-                                    
-                                    # Save to Session State
-                                    async with state_lock:
-                                        if session_id in interview_sessions:
-                                            interview_sessions[session_id]["suggested_questions"].extend(frontend_questions)
-
-                        except Exception as e:
-                            logger.error(f"Error in OpenAI listener: {e}")
+                        elif event["type"] == "analysis":
+                            payload = event.get("payload", {})
+                            questions_list = payload.get("suggestions", [])
+                            
+                            logger.info(f"💡 AI Generated {len(questions_list)} questions")
+                            
+                            frontend_questions = []
+                            for i, q in enumerate(questions_list):
+                                frontend_questions.append({
+                                    "id": f"q_{int(time.time())}_{i}",
+                                    "text": q.get("question", ""),
+                                    "skill": q.get("type", "general").upper().replace("_", " "),
+                                    "reasoning": q.get("reasoning", ""),
+                                    "timestamp": int(time.time() * 1000)
+                                })
+                            
+                            if frontend_questions:
+                                await websocket.send_json({
+                                    "type": "suggested_questions",
+                                    "session_id": session_id,
+                                    "questions": frontend_questions
+                                })
+                            
+                            async with state_lock:
+                                if session_id in interview_sessions:
+                                    interview_sessions[session_id]["suggested_questions"].extend(frontend_questions)
                     
-                    # Start the listener task
-                    openai_task = asyncio.create_task(listen_to_openai())
+                    # Background listener for HR service
+                    async def listen_to_hr():
+                        try:
+                            async for event in hr_service.listen():
+                                await handle_event(event, "HR")
+                        except Exception as e:
+                            logger.error(f"Error in HR listener: {e}")
+                    
+                    # Background listener for Candidate service
+                    async def listen_to_candidate():
+                        try:
+                            async for event in candidate_service.listen():
+                                await handle_event(event, "Candidate")
+                        except Exception as e:
+                            logger.error(f"Error in Candidate listener: {e}")
+                    
+                    # Start both listener tasks
+                    hr_task = asyncio.create_task(listen_to_hr())
+                    candidate_task = asyncio.create_task(listen_to_candidate())
                     
                     # Notify frontend that session is ready
                     await websocket.send_json({
                         "type": "session_started",
                         "session_id": session_id,
-                        "mode": "realtime"
+                        "mode": "realtime_dual"
                     })
 
                 except Exception as e:
                     logger.error(f"Failed to start OpenAI Realtime: {e}")
-                    await websocket.send_json({"type": "error", "message": "Failed to connect to AI Service"})
+                    await websocket.send_json({"type": "error", "message": f"Failed to connect to AI Service: {e}"})
             
-            # ===== AUDIO CHUNK =====
-            elif message_type == "audio":
-                # Only process if service is connected
-                if openai_service:
+            # ===== AUDIO CHUNK (HR - from microphone) =====
+            elif message_type == "audio_hr":
+                if hr_service:
                     payload = data.get("payload")
                     if payload:
                         try:
-                            # It's base64 from frontend, convert to bytes -> send to service
-                            # (Service will re-encode to base64 for JSON payload, 
-                            # or handle raw bytes if using binary frame)
-                            # Our Service expects bytes.
                             audio_bytes = base64.b64decode(payload)
-                            await openai_service.send_audio_chunk(audio_bytes)
+                            await hr_service.send_audio_chunk(audio_bytes)
                         except Exception as e:
-                            logger.error(f"Audio processing error: {e}")
+                            logger.error(f"HR audio processing error: {e}")
+
+            # ===== AUDIO CHUNK (Candidate - from screen share) =====
+            elif message_type == "audio_candidate":
+                if candidate_service:
+                    payload = data.get("payload")
+                    if payload:
+                        try:
+                            audio_bytes = base64.b64decode(payload)
+                            await candidate_service.send_audio_chunk(audio_bytes)
+                        except Exception as e:
+                            logger.error(f"Candidate audio processing error: {e}")
 
             # ===== END INTERVIEW =====
             elif message_type == "end" or message_type == "stop":
@@ -227,11 +291,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     # SAVE TO FILE
                     async with state_lock:
                         if session_id in interview_sessions:
-                            # Update status
                             interview_sessions[session_id]["status"] = "completed"
                             interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
                             
-                            # Write JSON
                             try:
                                 directory = "interviews"
                                 if not os.path.exists(directory):
@@ -244,7 +306,6 @@ async def websocket_endpoint(websocket: WebSocket):
                             except Exception as e:
                                 logger.error(f"Failed to save JSON: {e}")
 
-                    # Notify frontend
                     await websocket.send_json({"type": "session_ended"})
                     break
 
@@ -256,13 +317,16 @@ async def websocket_endpoint(websocket: WebSocket):
         if websocket in active_websockets:
             active_websockets.remove(websocket)
         
-        # Cleanup
-        if openai_task:
-            openai_task.cancel()
-            try:
-                await openai_task
-            except asyncio.CancelledError:
-                pass
+        # Cleanup tasks
+        for task in [hr_task, candidate_task]:
+            if task:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
         
-        if openai_service:
-            await openai_service.disconnect()
+        # Cleanup services
+        for service in [hr_service, candidate_service]:
+            if service:
+                await service.disconnect()

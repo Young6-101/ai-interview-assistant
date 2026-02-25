@@ -122,6 +122,7 @@ export const MeetingRoomCard: React.FC<MeetingRoomCardProps> = ({
                     <video
                         ref={ref => { if (ref) ref.srcObject = screenStream }}
                         autoPlay
+                        muted  // IMPORTANT: Mute to prevent echo - audio is captured separately
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                     />
                 ) : (

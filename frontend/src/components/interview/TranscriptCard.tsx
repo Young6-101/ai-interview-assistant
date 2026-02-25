@@ -40,9 +40,13 @@ export const TranscriptCard: React.FC<TranscriptCardProps> = ({ transcripts }) =
                             fontSize: '14px',
                             textTransform: 'uppercase'
                         }}>
-                            {t.speaker === 'HR' ? 'You' : 'Candidate'}
+                            {t.speaker === 'HR' ? 'HR' : 'Candidate'}
                         </span>
-                        <span style={{ color: '#334155' }}>{t.text}</span>
+                        {t.text === '...' ? (
+                            <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Speaking...</span>
+                        ) : (
+                            <span style={{ color: '#334155' }}>{t.text}</span>
+                        )}
                     </div>
                 ))}
                 <div ref={bottomRef} />
