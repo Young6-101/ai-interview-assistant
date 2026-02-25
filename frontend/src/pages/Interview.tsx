@@ -10,24 +10,6 @@ import { JobDescriptionCard } from '../components/interview/JobDescriptionCard'
 
 const VITE_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-// Hardcoded JD Content
-const jdContent = `Research Assistant – HCI Lab
-
-Requirements:
-- Current/recent student or graduate in HCI, Computer Science, Design, Psychology or related field
-- Practical experience or strong training in user research / UX methods
-- Comfortable with user study facilitation (interviews/tests/surveys)
-- Prototyping skills (Figma / Adobe XD / Sketch or similar)
-- Data analysis capability:
-  • Qualitative: thematic analysis, coding
-  • AND/OR quantitative: basic stats in Python / R / SPSS
-- Solid academic/technical writing ability
-- Available ≥20 hours/week
-
-**Bonus:**
-- Prior research project or lab experience
-- Familiarity with NVivo, PyTorch, Unity, participatory design
-- Interest in mental health & technology, inclusive design, or AI ethics  `
 
 export const Interview: React.FC = () => {
   const context = useInterview()
@@ -241,9 +223,7 @@ export const Interview: React.FC = () => {
       />
 
       {/* 4. BOTTOM RIGHT: JD */}
-      <JobDescriptionCard
-        content={jdContent}
-      />
+      <JobDescriptionCard />
     </div>
   )
 }
