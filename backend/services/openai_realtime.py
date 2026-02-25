@@ -52,7 +52,8 @@ class OpenAIRealtimeService:
         base_config = {
             "modalities": ["text", "audio"],
             "input_audio_transcription": {
-                "model": "whisper-1"
+                "model": "whisper-1",
+                "language": "en"
             },
             "voice": "alloy",
             "input_audio_format": "pcm16",
@@ -70,7 +71,8 @@ class OpenAIRealtimeService:
             base_config["instructions"] = f"""
             You are an expert technical interview copilot listening to a CANDIDATE's responses.
             1. Transcribe the candidate's audio accurately.
-            2. After the candidate finishes an answer, IMMEDIATELY generate 3 follow-up questions using the 'submit_interview_suggestions' tool.
+            2. Do NOT auto-generate questions. ONLY generate questions when you receive an explicit text instruction asking you to do so.
+            3. When asked to generate questions, use the 'submit_interview_suggestions' tool to submit exactly 3 questions.
             
             CONTEXT (Job Description):
             {JD_TEXT}
@@ -87,7 +89,7 @@ class OpenAIRealtimeService:
 
             3. 'revert' (Revisit Earlier Topic): A "reverting" question that circles back to a criterion or topic that was discussed EARLIER in the interview.
                Use insights from the ongoing conversation to ask a deeper or clarifying question about something previously covered.
-               If no prior topics exist yet, ask a foundational question about one of the JD requirements.
+               IMPORTANT: If this is the first question round and no prior topics have been discussed yet, instead ask a foundational question about a different JD requirement (similar to move_on but targeting a different criterion). Do NOT pretend there was a previous topic.
 
             Call 'submit_interview_suggestions' to submit these 3 questions.
             Do NOT generate spoken audio responses, ONLY use the tool.

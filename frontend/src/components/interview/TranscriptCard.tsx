@@ -32,7 +32,7 @@ export const TranscriptCard: React.FC<TranscriptCardProps> = ({ transcripts }) =
             <div style={{ flex: 1, overflowY: 'auto', padding: '16px', fontSize: '18px', lineHeight: '1.6' }}>
                 {transcripts.length === 0 && <p style={{ color: '#94a3b8', fontStyle: 'italic', fontSize: '16px' }}>Transcripts will appear here...</p>}
                 {transcripts.map(t => (
-                    <div key={t.id} style={{ marginBottom: '14px' }}>
+                    <div key={t.id} style={{ marginBottom: '14px', textAlign: 'left' }}>
                         <span style={{
                             fontWeight: 700,
                             color: t.speaker === 'HR' ? '#2563eb' : '#059669',

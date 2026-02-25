@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 
 interface MeetingRoomCardProps {
     isConnected: boolean;
@@ -32,6 +32,12 @@ export const MeetingRoomCard: React.FC<MeetingRoomCardProps> = ({
     if (error) console.debug("MeetingRoom Error:", error);
 
     const [showEndModal, setShowEndModal] = useState(false);
+
+    const videoRefCallback = useCallback((ref: HTMLVideoElement | null) => {
+        if (ref && screenStream) {
+            ref.srcObject = screenStream;
+        }
+    }, [screenStream]);
 
     const handleEndClick = () => {
         setShowEndModal(true);
@@ -120,7 +126,7 @@ export const MeetingRoomCard: React.FC<MeetingRoomCardProps> = ({
             <div style={{ flex: 1, width: '100%', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', overflow: 'hidden' }}>
                 {isSharing && screenStream ? (
                     <video
-                        ref={ref => { if (ref) ref.srcObject = screenStream }}
+                        ref={videoRefCallback}
                         autoPlay
                         muted  // IMPORTANT: Mute to prevent echo - audio is captured separately
                         style={{ width: '100%', height: '100%', objectFit: 'contain' }}
@@ -190,7 +196,7 @@ export const MeetingRoomCard: React.FC<MeetingRoomCardProps> = ({
                                     padding: '10px 20px',
                                     borderRadius: '8px',
                                     border: 'none',
-                                    background: '#ef4444',
+                                    background: '#15813eff',
                                     color: '#fff',
                                     cursor: 'pointer',
                                     fontSize: '14px',
