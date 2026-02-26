@@ -8,7 +8,21 @@ import { AiQuestionsCard } from '../components/interview/AiQuestionsCard'
 import { TranscriptCard } from '../components/interview/TranscriptCard'
 import { JobDescriptionCard } from '../components/interview/JobDescriptionCard'
 
-const VITE_API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// For production: use relative path (Nginx proxies /ws to backend)
+// For development: use localhost:8000
+const getWsUrl = () => {
+  // If VITE_API_URL is set, use it
+  if (import.meta.env.VITE_API_URL) {
+    const apiUrl = import.meta.env.VITE_API_URL
+    // Convert http(s):// to ws(s)://
+    return apiUrl.replace(/^http/, 'ws') + '/ws'
+  }
+  // In production (no env var set), use relative path based on current location
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}/ws`
+}
+
+const WS_URL = getWsUrl()
 
 
 export const Interview: React.FC = () => {
@@ -24,7 +38,7 @@ export const Interview: React.FC = () => {
 
   // 1. WebSocket Hook (Lite)
   const { isConnected, sendMessage, disconnect } = useWebSocketLite({
-    url: `${VITE_API_URL}/ws`,
+    url: WS_URL,
     token: context.token || 'temp_token',
     onMessage: (msg: any) => {
       console.log('📩 WS Message:', msg.type, msg);  // Debug log
