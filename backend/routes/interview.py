@@ -205,9 +205,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
                         elif event["type"] == "analysis":
                             payload = event.get("payload", {})
-                            questions_list = payload.get("suggestions", [])
-                            
-                            logger.info(f"💡 AI Generated {len(questions_list)} questions")
                             
                             TYPE_LABELS = {
                                 "follow_up": "🔽 FOLLOW-UP",
@@ -215,17 +212,21 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "revert": "🔙 REVERT",
                             }
                             
+                            # Parse new schema: 3 separate fields instead of array
                             frontend_questions = []
-                            for i, q in enumerate(questions_list):
-                                q_type = q.get("type", "follow_up")
-                                frontend_questions.append({
-                                    "id": f"q_{int(time.time())}_{i}",
-                                    "text": q.get("question", ""),
-                                    "type": q_type,
-                                    "skill": TYPE_LABELS.get(q_type, q_type.upper().replace("_", " ")),
-                                    "reasoning": q.get("reasoning", ""),
-                                    "timestamp": int(time.time() * 1000)
-                                })
+                            for q_type in ["follow_up", "move_on", "revert"]:
+                                q_data = payload.get(q_type)
+                                if q_data and q_data.get("question"):
+                                    frontend_questions.append({
+                                        "id": f"q_{int(time.time())}_{q_type}",
+                                        "text": q_data.get("question", ""),
+                                        "type": q_type,
+                                        "skill": TYPE_LABELS.get(q_type, q_type.upper()),
+                                        "reasoning": q_data.get("reasoning", ""),
+                                        "timestamp": int(time.time() * 1000)
+                                    })
+                            
+                            logger.info(f"💡 AI Generated {len(frontend_questions)} questions")
                             
                             if frontend_questions:
                                 await websocket.send_json({

@@ -101,34 +101,39 @@ class OpenAIRealtimeService:
                 {
                     "type": "function",
                     "name": "submit_interview_suggestions",
-                    "description": "Submit 3 interview questions: one follow-up, one move-on, and one revert.",
+                    "description": "Submit exactly 3 interview questions, one for each category. Each category MUST be filled.",
                     "parameters": {
                         "type": "object",
                         "properties": {
-                            "suggestions": {
-                                "type": "array",
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "type": {
-                                            "type": "string",
-                                            "enum": ["follow_up", "move_on", "revert"],
-                                            "description": "Category: follow_up (dive deeper), move_on (new criterion), revert (revisit earlier topic)"
-                                        },
-                                        "question": {
-                                            "type": "string",
-                                            "description": "The actual question to ask the candidate."
-                                        },
-                                        "reasoning": {
-                                            "type": "string",
-                                            "description": "Why this question is important (brief)."
-                                        }
-                                    },
-                                    "required": ["type", "question", "reasoning"]
-                                }
+                            "follow_up": {
+                                "type": "object",
+                                "description": "FOLLOW-UP: Dive deeper into what the candidate JUST said. Probe for details, clarify STAR gaps, challenge technical logic, or request concrete examples.",
+                                "properties": {
+                                    "question": {"type": "string", "description": "The follow-up question to ask."},
+                                    "reasoning": {"type": "string", "description": "Why this follow-up is important (brief)."}
+                                },
+                                "required": ["question", "reasoning"]
+                            },
+                            "move_on": {
+                                "type": "object",
+                                "description": "MOVE-ON: Pivot to a DIFFERENT JD criterion NOT yet discussed. Do NOT ask about the same topic the candidate was just discussing.",
+                                "properties": {
+                                    "question": {"type": "string", "description": "The move-on question targeting a new JD criterion."},
+                                    "reasoning": {"type": "string", "description": "Which JD criterion this assesses and why (brief)."}
+                                },
+                                "required": ["question", "reasoning"]
+                            },
+                            "revert": {
+                                "type": "object",
+                                "description": "REVERT: Circle back to a topic discussed EARLIER in the interview with a deeper or clarifying question. If this is the first round, ask about a different JD requirement instead.",
+                                "properties": {
+                                    "question": {"type": "string", "description": "The revert/revisit question."},
+                                    "reasoning": {"type": "string", "description": "What earlier topic this revisits and why (brief)."}
+                                },
+                                "required": ["question", "reasoning"]
                             }
                         },
-                        "required": ["suggestions"]
+                        "required": ["follow_up", "move_on", "revert"]
                     }
                 }
             ]
