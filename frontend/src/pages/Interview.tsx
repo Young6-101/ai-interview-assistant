@@ -11,14 +11,7 @@ import { JobDescriptionCard } from '../components/interview/JobDescriptionCard'
 // For production: use relative path (Nginx proxies /ws to backend)
 // For development: Vite proxy handles /ws -> localhost:8000
 const getWsUrl = () => {
-  // If VITE_API_URL is set, use it (for custom deployments)
-  if (import.meta.env.VITE_API_URL) {
-    const apiUrl = import.meta.env.VITE_API_URL
-    // Convert http(s):// to ws(s)://
-    return apiUrl.replace(/^http/, 'ws') + '/ws'
-  }
-  
-  // Use relative path - works for both:
+  // Always use /ws relative to host
   // - Dev: Vite proxy handles /ws -> localhost:8000
   // - Prod: Nginx proxy handles /ws -> backend:8000
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
