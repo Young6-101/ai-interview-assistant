@@ -9,26 +9,33 @@ import { TranscriptCard } from '../components/interview/TranscriptCard'
 import { JobDescriptionCard } from '../components/interview/JobDescriptionCard'
 
 // For production: use relative path (Nginx proxies /ws to backend)
-// For development: use localhost:8000
+// For development: Vite proxy handles /ws -> localhost:8000
 const getWsUrl = () => {
-  // If VITE_API_URL is set, use it
+  // If VITE_API_URL is set, use it (for custom deployments)
   if (import.meta.env.VITE_API_URL) {
     const apiUrl = import.meta.env.VITE_API_URL
     // Convert http(s):// to ws(s)://
     return apiUrl.replace(/^http/, 'ws') + '/ws'
   }
-  // In production (no env var set), use relative path based on current location
+  
+  // Use relative path - works for both:
+  // - Dev: Vite proxy handles /ws -> localhost:8000
+  // - Prod: Nginx proxy handles /ws -> backend:8000
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${protocol}//${window.location.host}/ws`
 }
 
 const WS_URL = getWsUrl()
+console.log('🌐 WebSocket URL:', WS_URL)
 
 
 export const Interview: React.FC = () => {
   const context = useInterview()
   const navigate = useNavigate()
   const [error, setError] = useState<string>('')
+
+  // Debug: log token
+  console.log('🔑 Token for WS:', context.token || 'temp_token')
 
   // Use ref to track interview state for audio callback (avoids stale closure)
   const interviewStateRef = React.useRef(context.interviewState)

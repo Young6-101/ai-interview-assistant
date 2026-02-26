@@ -13,19 +13,24 @@ export const useWebSocketLite = ({ url, token, onMessage }: UseWebSocketOptions)
     // Use ref to store the callback to avoid re-creating the connect function
     const onMessageRef = useRef(onMessage);
     
+    console.log('🔌 useWebSocketLite called with url:', url, 'token:', token?.substring(0, 10) + '...');
+    
     // Keep the ref updated with the latest callback
     useEffect(() => {
         onMessageRef.current = onMessage;
     }, [onMessage]);
 
     const connect = useCallback(() => {
+        console.log('🔌 connect() called, current state:', wsRef.current?.readyState);
+        
         if (wsRef.current?.readyState === WebSocket.OPEN || 
             wsRef.current?.readyState === WebSocket.CONNECTING) {
+            console.log('🔌 Already connected or connecting, skipping');
             return;
         }
 
         const fullUrl = `${url}?token=${token}`;
-        console.log('Connecting to WS:', fullUrl);
+        console.log('🔌 Connecting to WS:', fullUrl);
 
         const socket = new WebSocket(fullUrl);
 
@@ -74,11 +79,15 @@ export const useWebSocketLite = ({ url, token, onMessage }: UseWebSocketOptions)
         }
     }, []);
 
-    // Auto connect on mount - only depend on url and token
+    // Auto connect on mount
     useEffect(() => {
+        console.log('🔌 useEffect triggered, calling connect()');
         connect();
-        return () => disconnect();
-    }, [url, token]); // Only reconnect when url or token changes
+        return () => {
+            console.log('🔌 useEffect cleanup, disconnecting');
+            disconnect();
+        };
+    }, [connect, disconnect]); // Depend on connect/disconnect which depend on url/token
 
     return { isConnected, sendMessage, disconnect, connect };
 };
