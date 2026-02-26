@@ -26,16 +26,11 @@ const getWsUrl = () => {
 }
 
 const WS_URL = getWsUrl()
-console.log('🌐 WebSocket URL:', WS_URL)
-
 
 export const Interview: React.FC = () => {
   const context = useInterview()
   const navigate = useNavigate()
   const [error, setError] = useState<string>('')
-
-  // Debug: log token
-  console.log('🔑 Token for WS:', context.token || 'temp_token')
 
   // Use ref to track interview state for audio callback (avoids stale closure)
   const interviewStateRef = React.useRef(context.interviewState)

@@ -50,9 +50,6 @@ export const MeetingRoomCard: React.FC<MeetingRoomCardProps> = ({
 
     const isRunning = interviewState === 'RUNNING';
 
-    // Debug log
-    console.log('🔍 MeetingRoomCard state:', { isConnected, isStreaming, interviewState, isRunning, isSharing });
-
     return (
         <div className="card" style={{
             background: '#fff',
