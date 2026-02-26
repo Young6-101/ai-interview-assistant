@@ -57,6 +57,8 @@ export interface InterviewContextType {
 
   // Legacy / Extended (needed for compatibility or unused but passed)
   updateTranscript: (id: string, updates: Partial<TranscriptSegment>) => void
+  removeTranscript: (id: string) => void
+  clearTranscripts: () => void
   weakPoints: WeakPoint[]
   addWeakPoint: (point: WeakPoint) => void
   updateWeakPoint: (id: string, updates: Partial<WeakPoint>) => void
@@ -98,6 +100,14 @@ export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children 
 
   const updateTranscript = (id: string, updates: Partial<TranscriptSegment>) => {
     setTranscripts(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+  }
+
+  const removeTranscript = (id: string) => {
+    setTranscripts(prev => prev.filter(t => t.id !== id));
+  }
+
+  const clearTranscripts = () => {
+    setTranscripts([]);
   }
 
   const addSuggestedQuestion = (q: SuggestedQuestion) => {
@@ -147,6 +157,8 @@ export const InterviewProvider: React.FC<{ children: ReactNode }> = ({ children 
 
       // Legacy
       updateTranscript,
+      removeTranscript,
+      clearTranscripts,
       weakPoints,
       addWeakPoint,
       updateWeakPoint,

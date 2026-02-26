@@ -210,6 +210,11 @@ class OpenAIRealtimeService:
             return
         
         try:
+            # Cancel any active response first to avoid conflict
+            await self.ws.send(json.dumps({
+                "type": "response.cancel"
+            }))
+            
             await self.ws.send(json.dumps({
                 "type": "conversation.item.create",
                 "item": {
@@ -251,6 +256,10 @@ class OpenAIRealtimeService:
                     }
                 elif event_type == "input_audio_buffer.speech_stopped":
                     logger.info(f"🔇 [{self.speaker.upper()}] Speech ended")
+                    yield {
+                        "type": "speech_stopped",
+                        "speaker": self.speaker
+                    }
                 
                 # 1. Transcript
                 if event_type == "conversation.item.input_audio_transcription.completed":

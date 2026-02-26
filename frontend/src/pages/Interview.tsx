@@ -59,6 +59,10 @@ export const Interview: React.FC = () => {
           timestamp: payload.timestamp,
           isFinal: true
         })
+      } else if (msg.type === 'transcript_remove') {
+        // Remove stale "Speaking..." placeholder (no transcript followed)
+        const payload = msg.payload
+        context.removeTranscript(payload.id)
       } else if (msg.type === 'suggested_questions') {
         // Batch update questions
         if (msg.questions && Array.isArray(msg.questions)) {
@@ -153,12 +157,14 @@ export const Interview: React.FC = () => {
     stopStream()
 
     // 2. Tell Backend
-    sendMessage({ type: 'stop' }) // Optional: tell backend
+    sendMessage({ type: 'stop' })
 
-    // 3. Reset Context State
+    // 3. Reset ALL Context State
     context.setInterviewState('COMPLETED')
-    context.setToken('') // Clear token in context & localstorage
+    context.setToken('')
     context.setCandidateName('')
+    context.setSuggestedQuestions([])
+    context.clearTranscripts()
 
     // 4. Navigate Away
     navigate('/')

@@ -160,6 +160,24 @@ async def websocket_endpoint(websocket: WebSocket):
                             })
                             return
                         
+                        # Handle speech_stopped - clean up stale "Speaking..." if no transcript follows
+                        if event["type"] == "speech_stopped":
+                            speaker = event.get("speaker", "candidate")
+                            stale_id = speaking_state.get(speaker)
+                            if stale_id:
+                                # Schedule cleanup after 3s if transcript hasn't replaced it
+                                async def cleanup_stale(sid, spk):
+                                    await asyncio.sleep(3)
+                                    if speaking_state.get(spk) == sid:
+                                        speaking_state[spk] = None
+                                        await websocket.send_json({
+                                            "type": "transcript_remove",
+                                            "session_id": session_id,
+                                            "payload": {"id": sid}
+                                        })
+                                asyncio.create_task(cleanup_stale(stale_id, speaker))
+                            return
+                        
                         if event["type"] == "transcript":
                             text = event.get("text", "")
                             speaker = event.get("speaker", "candidate")
