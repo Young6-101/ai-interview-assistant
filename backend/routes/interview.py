@@ -83,14 +83,23 @@ async def websocket_endpoint(websocket: WebSocket):
                 await websocket.send_json({"type": "pong"})
                 continue
             
-            # ===== GENERATE QUESTIONS =====
+            # ===== RECORD BUTTON CLICK =====
+            if message_type == "record_button_click":
+                async with state_lock:
+                    if session_id and session_id in interview_sessions:
+                        if "button_clicks" not in interview_sessions[session_id]:
+                            interview_sessions[session_id]["button_clicks"] = []
+                        interview_sessions[session_id]["button_clicks"].append({
+                            "timestamp": int(time.time() * 1000)
+                        })
+                continue
+                
+            # ===== GENERATE QUESTIONS (Fallback) =====
             if message_type == "generate_questions":
-                # Send to candidate service (which has tools enabled)
                 if candidate_service:
                     await candidate_service.send_text_instruction(
                         "Based on the conversation so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
                     )
-                    await websocket.send_json({"type": "info", "message": "Generating questions..."})
                 continue
 
             # ===== START INTERVIEW =====
@@ -114,7 +123,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "id": session_id,
                         "username": final_username,
                         "mode": input_mode,
-                        "start_time": datetime.now().isoformat(),
+                        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "transcripts": [],
                         "suggested_questions": []
                     }
@@ -220,6 +229,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                         "text": text,
                                         "timestamp": timestamp
                                     })
+                                    
+                            # Auto-trigger AI question generation if Candidate just finished speaking
+                            if speaker == "candidate" and candidate_service:
+                                await candidate_service.send_text_instruction(
+                                    "The candidate just finished speaking. Based on the conversation so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
+                                )
 
                         elif event["type"] == "analysis":
                             payload = event.get("payload", {})
@@ -318,8 +333,60 @@ async def websocket_endpoint(websocket: WebSocket):
                     # SAVE TO FILE
                     async with state_lock:
                         if session_id in interview_sessions:
-                            interview_sessions[session_id]["status"] = "completed"
-                            interview_sessions[session_id]["end_time"] = datetime.now().isoformat()
+                            session_data = interview_sessions[session_id]
+                            session_data["status"] = "completed"
+                            session_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            
+                            timeline = []
+                            for t in session_data.get("transcripts", []):
+                                dt = datetime.fromtimestamp(t["timestamp"] / 1000.0)
+                                timeline.append({
+                                    "event": "transcript",
+                                    "speaker": t["speaker"],
+                                    "text": t["text"],
+                                    "time": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "_ts": t["timestamp"]
+                                })
+                                
+                            qs_by_ts = {}
+                            for q in session_data.get("suggested_questions", []):
+                                bucket = q["timestamp"] // 5000
+                                if bucket not in qs_by_ts:
+                                    qs_by_ts[bucket] = []
+                                qs_by_ts[bucket].append(q)
+                                
+                            for bucket, qs in qs_by_ts.items():
+                                avg_ts = qs[0]["timestamp"]
+                                dt = datetime.fromtimestamp(avg_ts / 1000.0)
+                                formatted_qs = [{"type": q["type"], "question": q["text"], "reasoning": q["reasoning"]} for q in qs]
+                                timeline.append({
+                                    "event": "ai_questions",
+                                    "questions": formatted_qs,
+                                    "time": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "_ts": avg_ts
+                                })
+                                
+                            for bc in session_data.get("button_clicks", []):
+                                dt = datetime.fromtimestamp(bc["timestamp"] / 1000.0)
+                                timeline.append({
+                                    "event": "hr_clicked_button",
+                                    "time": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "_ts": bc["timestamp"]
+                                })
+                                
+                            timeline.sort(key=lambda x: x["_ts"])
+                            for item in timeline:
+                                item.pop("_ts", None)
+                                
+                            save_data = {
+                                "id": session_data["id"],
+                                "username": session_data["username"],
+                                "mode": session_data.get("mode", "realtime"),
+                                "start_time": session_data.get("start_time"),
+                                "end_time": session_data["end_time"],
+                                "status": session_data["status"],
+                                "timeline": timeline
+                            }
                             
                             try:
                                 directory = "interviews"
@@ -328,7 +395,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 
                                 filename = f"{directory}/{session_id}.json"
                                 with open(filename, 'w', encoding='utf-8') as f:
-                                    json.dump(interview_sessions[session_id], f, indent=2, ensure_ascii=False)
+                                    json.dump(save_data, f, indent=2, ensure_ascii=False)
                                 logger.info(f"💾 Saved interview data to {filename}")
                             except Exception as e:
                                 logger.error(f"Failed to save JSON: {e}")

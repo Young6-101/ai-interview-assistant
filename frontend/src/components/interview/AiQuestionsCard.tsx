@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import type { SuggestedQuestion } from '../../contexts/InterviewContext';
 
 interface AiQuestionsCardProps {
@@ -23,42 +23,42 @@ const SuggestedQuestionItem: React.FC<{ question: SuggestedQuestion }> = ({ ques
             className="suggestion-item"
             onClick={() => setExpanded(!expanded)}
             style={{
-                marginBottom: '14px',
-                padding: '16px',
+                marginBottom: '10px',
+                padding: '12px',
                 background: config.bg,
-                borderRadius: '12px',
+                borderRadius: '8px',
                 border: '1px solid #e2e8f0',
                 boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
                 cursor: 'pointer',
                 transition: 'all 0.2s ease',
-                borderLeft: `5px solid ${config.color}`
+                borderLeft: `4px solid ${config.color}`
             }}
         >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <span style={{
-                    fontSize: '12px',
+                    fontSize: '11px',
                     fontWeight: 700,
                     color: config.color,
                     textTransform: 'uppercase',
                     display: 'inline-flex',
                     alignItems: 'center',
                     gap: '4px',
-                    padding: '2px 8px',
+                    padding: '2px 6px',
                     borderRadius: '4px',
                     background: `${config.color}15`,
                 }}>
                     {config.emoji} {config.label}
                 </span>
-                <span style={{ fontSize: '12px', color: '#94a3b8' }}>{new Date(question.timestamp).toLocaleTimeString()}</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>{new Date(question.timestamp).toLocaleTimeString()}</span>
             </div>
 
-            <p style={{ margin: '6px 0', fontSize: '18px', fontWeight: 500, color: '#1e293b', lineHeight: '1.4' }}>
+            <p style={{ margin: '4px 0', fontSize: '15px', fontWeight: 500, color: '#1e293b', lineHeight: '1.4' }}>
                 {question.text}
             </p>
 
             {expanded && question.reasoning && (
-                <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
-                    <p style={{ fontSize: '14px', color: '#64748b', fontStyle: 'italic', margin: 0 }}>
+                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(0,0,0,0.05)' }}>
+                    <p style={{ fontSize: '13px', color: '#64748b', fontStyle: 'italic', margin: 0 }}>
                         💡 {question.reasoning}
                     </p>
                 </div>
@@ -69,9 +69,32 @@ const SuggestedQuestionItem: React.FC<{ question: SuggestedQuestion }> = ({ ques
 
 export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, interviewMode, onGenerateQuestions }) => {
     const [showWarning, setShowWarning] = useState(false);
+    const [visibleQuestions, setVisibleQuestions] = useState<SuggestedQuestion[]>([]);
+    const [hasNew, setHasNew] = useState(false);
+    const [isFakeLoading, setIsFakeLoading] = useState(false);
+
+    useEffect(() => {
+        if (questions && questions.length > 0) {
+            const visibleIds = visibleQuestions.map(q => q.id).join(',');
+            const currentIds = questions.map(q => q.id).join(',');
+            if (visibleIds !== currentIds) {
+                setHasNew(true);
+            }
+        }
+    }, [questions, visibleQuestions]);
 
     const handleGenerateClick = () => {
-        onGenerateQuestions();
+        onGenerateQuestions(); // Sends record_button_click via WS
+
+        setIsFakeLoading(true);
+        setTimeout(() => {
+            if (hasNew) {
+                setVisibleQuestions(questions);
+                setHasNew(false);
+            }
+            setIsFakeLoading(false);
+        }, 800);
+
         if (interviewMode === 'mode2') {
             setShowWarning(true);
             setTimeout(() => {
@@ -128,7 +151,7 @@ export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, int
                         e.currentTarget.style.transform = 'translateY(0)';
                     }}
                 >
-                    ✨ Generate Questions
+                    {isFakeLoading ? '⏳ Generating...' : '✨ Generate Questions'}
                 </button>
 
                 {/* Yellow Warning Box */}
@@ -152,13 +175,13 @@ export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, int
                 )}
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px', background: '#f8fafc' }}>
-                {questions.length === 0 ? (
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '16px' }}>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '12px', background: '#f8fafc' }}>
+                {visibleQuestions.length === 0 ? (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '15px' }}>
                         Waiting for conversation...
                     </div>
                 ) : (
-                    questions.map(q => (
+                    visibleQuestions.map(q => (
                         <SuggestedQuestionItem key={q.id} question={q} />
                     ))
                 )}

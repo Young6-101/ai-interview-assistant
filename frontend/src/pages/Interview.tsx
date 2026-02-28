@@ -187,7 +187,7 @@ export const Interview: React.FC = () => {
   }
 
   const handleGenerateQuestions = () => {
-    sendMessage({ type: 'generate_questions' })
+    sendMessage({ type: 'record_button_click' })
   }
 
   // --- Render ---

@@ -63,7 +63,7 @@ class OpenAIRealtimeService:
             "output_audio_format": "pcm16",
             "turn_detection": {
                 "type": "server_vad",
-                "threshold": 0.5,
+                "threshold": 0.8,  # Increased from 0.5 to reduce noise sensitivity
                 "prefix_padding_ms": 300,
                 "silence_duration_ms": 600
             }
@@ -264,7 +264,17 @@ class OpenAIRealtimeService:
                 # 1. Transcript
                 if event_type == "conversation.item.input_audio_transcription.completed":
                     transcript_text = event.get("transcript", "")
-                    if transcript_text.strip():  # Only yield non-empty transcripts
+                    
+                    # Check for common Whisper hallucinations caused by environmental noise
+                    clean_text = transcript_text.strip().lower()
+                    hallucinations = [
+                        "thank you.", "thank you", "thanks.", "thanks",
+                        "bye.", "bye", "am i right?", "you", 
+                        "[silence]", "[blank]", ".", ".."
+                    ]
+                    is_hallucination = clean_text in hallucinations or len(clean_text) <= 1
+                    
+                    if transcript_text.strip() and not is_hallucination:
                         logger.info(f"📝 [{self.speaker.upper()}] Transcript: {transcript_text[:80]}...")
                         yield {
                             "type": "transcript",
@@ -272,6 +282,8 @@ class OpenAIRealtimeService:
                             "speaker": self.speaker,
                             "is_final": True
                         }
+                    elif transcript_text:
+                        logger.info(f"🚫 [{self.speaker.upper()}] Filtered hallucination/noise: '{transcript_text}'")
 
                 # 2. Function Call (only for candidate with tools enabled)
                 elif event_type == "response.function_call_arguments.done" and self.enable_tools:
