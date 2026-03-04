@@ -85,6 +85,7 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # ===== RECORD BUTTON CLICK =====
             if message_type == "record_button_click":
+                # Record the click timestamp
                 async with state_lock:
                     if session_id and session_id in interview_sessions:
                         if "button_clicks" not in interview_sessions[session_id]:
@@ -92,6 +93,28 @@ async def websocket_endpoint(websocket: WebSocket):
                         interview_sessions[session_id]["button_clicks"].append({
                             "timestamp": int(time.time() * 1000)
                         })
+                
+                # Unveil: send buffered questions to frontend
+                if pending_questions:
+                    await websocket.send_json({
+                        "type": "suggested_questions",
+                        "session_id": session_id,
+                        "questions": pending_questions
+                    })
+                    logger.info(f"💡 Unveiled {len(pending_questions)} buffered questions")
+                    # Save unveiled questions to session for JSON export
+                    async with state_lock:
+                        if session_id in interview_sessions:
+                            interview_sessions[session_id]["suggested_questions"].extend(pending_questions)
+                    pending_questions = []
+                elif candidate_service:
+                    # Buffer empty — force generate based on what AI has heard so far
+                    # Flag so the next analysis result goes directly to frontend
+                    send_next_directly = True
+                    logger.info("💡 Buffer empty, forcing question generation on demand")
+                    await candidate_service.send_text_instruction(
+                        "The HR wants questions NOW. Based on everything you've heard so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
+                    )
                 continue
                 
             # ===== GENERATE QUESTIONS (Fallback) =====
@@ -142,7 +165,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     await candidate_service.connect()
                     logger.info("🚀 Candidate OpenAI Realtime Service Connected")
                     
+                    # Buffer for AI-generated questions (unveiled on button click)
+                    pending_questions = []
+                    # Flag: if True, next generated questions go directly to frontend
+                    send_next_directly = False
+                    
                     # Track speaking state for interim display
+                    # Store the current active placeholder ID per speaker
                     speaking_state = {"hr": None, "candidate": None}
                     
                     # Helper function to handle events from either service
@@ -154,6 +183,17 @@ async def websocket_endpoint(websocket: WebSocket):
                             speaker = event.get("speaker", "candidate")
                             timestamp = int(time.time() * 1000)
                             interim_id = f"speaking_{speaker}_{timestamp}"
+                            
+                            # If there's already a placeholder for this speaker,
+                            # remove the old one first to avoid duplicates
+                            old_id = speaking_state.get(speaker)
+                            if old_id:
+                                await websocket.send_json({
+                                    "type": "transcript_remove",
+                                    "session_id": session_id,
+                                    "payload": {"id": old_id}
+                                })
+                            
                             speaking_state[speaker] = interim_id
                             
                             await websocket.send_json({
@@ -262,15 +302,23 @@ async def websocket_endpoint(websocket: WebSocket):
                             logger.info(f"💡 AI Generated {len(frontend_questions)} questions")
                             
                             if frontend_questions:
-                                await websocket.send_json({
-                                    "type": "suggested_questions",
-                                    "session_id": session_id,
-                                    "questions": frontend_questions
-                                })
-                            
-                            async with state_lock:
-                                if session_id in interview_sessions:
-                                    interview_sessions[session_id]["suggested_questions"].extend(frontend_questions)
+                                nonlocal pending_questions, send_next_directly
+                                if send_next_directly:
+                                    # Force-triggered: send directly to frontend
+                                    await websocket.send_json({
+                                        "type": "suggested_questions",
+                                        "session_id": session_id,
+                                        "questions": frontend_questions
+                                    })
+                                    send_next_directly = False
+                                    logger.info(f"💡 Sent {len(frontend_questions)} questions directly (on-demand)")
+                                    # Save to session for JSON export
+                                    async with state_lock:
+                                        if session_id in interview_sessions:
+                                            interview_sessions[session_id]["suggested_questions"].extend(frontend_questions)
+                                else:
+                                    # Background: buffer for later unveil (not saved until unveiled)
+                                    pending_questions = frontend_questions
                     
                     # Background listener for HR service
                     async def listen_to_hr():
