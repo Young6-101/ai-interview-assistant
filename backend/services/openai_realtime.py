@@ -80,19 +80,37 @@ class OpenAIRealtimeService:
             CONTEXT (Job Description):
             {JD_TEXT}
             
-            The 3 questions MUST follow this exact structure:
+            ===== CRITICAL: QUESTION STYLE RULES =====
+            Every question you generate MUST be:
+            - VERY SHORT: Max 15–20 words. The HR should read it in one glance.
+            - SPOKEN / ORAL: Write exactly how a real person talks in a casual interview.
+            - Use natural filler words like "like", "so", "right", "you know", "kind of", "actually".
+            - Use contractions: "what's", "how'd", "didn't", "you've", etc.
+            - NO formal or academic phrasing. NO "Could you elaborate on..." or "Can you describe a time when..."
+            - Think of it as something an HR would casually say mid-conversation, NOT a written exam question.
+            
+            GOOD examples:
+            - "So like, what tools did you actually use for that?"
+            - "Wait, how'd you handle the stats part though?"
+            - "What about, like, any experience with Figma or prototyping?"
+            - "Right, so going back to the user study thing — what went wrong there?"
+            
+            BAD examples (DO NOT generate these):
+            - "Could you elaborate on your experience with qualitative data analysis?"
+            - "Can you describe a time when you facilitated a user study?"
+            - "What specific prototyping tools have you utilized in your previous work?"
+            ============================================
 
-            1. 'follow_up' (Dive Deeper): A specific follow-up based on what the candidate JUST said.
-               Probe deeper into their response — ask for details, clarify STAR gaps, challenge technical logic, or request concrete examples.
-               This question should feel like a natural continuation of the current topic.
+            The 3 questions MUST follow this structure:
 
-            2. 'move_on' (Assess New Criterion): A "move-on" question that pivots to a DIFFERENT criterion from the Job Description that has NOT been discussed yet in this interview.
-               Look at the JD requirements and pick one that the conversation has not covered. Frame the question so it naturally assesses that new criterion.
-               Do NOT ask about the same topic the candidate was just discussing.
+            1. 'follow_up' (Dive Deeper): A casual follow-up on what the candidate JUST said.
+               Probe for details, poke at gaps, or ask for a concrete example — but keep it conversational and brief.
 
-            3. 'revert' (Revisit Earlier Topic): A "reverting" question that circles back to a criterion or topic that was discussed EARLIER in the interview.
-               Use insights from the ongoing conversation to ask a deeper or clarifying question about something previously covered.
-               IMPORTANT: If this is the first question round and no prior topics have been discussed yet, instead ask a foundational question about a different JD requirement (similar to move_on but targeting a different criterion). Do NOT pretend there was a previous topic.
+            2. 'move_on' (New Topic): Pivot to a DIFFERENT JD criterion NOT yet discussed.
+               Frame it casually, like you're naturally shifting the conversation.
+
+            3. 'revert' (Go Back): Circle back to something discussed EARLIER.
+               If first round with no prior topics, ask about a different JD requirement instead. Don't pretend there was a previous topic.
 
             Call 'submit_interview_suggestions' to submit these 3 questions.
             Do NOT generate spoken audio responses, ONLY use the tool.
@@ -101,34 +119,34 @@ class OpenAIRealtimeService:
                 {
                     "type": "function",
                     "name": "submit_interview_suggestions",
-                    "description": "Submit exactly 3 interview questions, one for each category. Each category MUST be filled.",
+                    "description": "Submit exactly 3 short, casual, spoken-style interview questions. Keep each question under 20 words and conversational.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "follow_up": {
                                 "type": "object",
-                                "description": "FOLLOW-UP: Dive deeper into what the candidate JUST said. Probe for details, clarify STAR gaps, challenge technical logic, or request concrete examples.",
+                                "description": "A short casual follow-up on what the candidate just said. Max 20 words, spoken style.",
                                 "properties": {
-                                    "question": {"type": "string", "description": "The follow-up question to ask."},
-                                    "reasoning": {"type": "string", "description": "Why this follow-up is important (brief)."}
+                                    "question": {"type": "string", "description": "Short oral-style follow-up question (max 20 words, use fillers like 'like', 'so')."},
+                                    "reasoning": {"type": "string", "description": "Why this follow-up matters (brief)."}
                                 },
                                 "required": ["question", "reasoning"]
                             },
                             "move_on": {
                                 "type": "object",
-                                "description": "MOVE-ON: Pivot to a DIFFERENT JD criterion NOT yet discussed. Do NOT ask about the same topic the candidate was just discussing.",
+                                "description": "Casually pivot to a new JD criterion not yet discussed. Max 20 words, spoken style.",
                                 "properties": {
-                                    "question": {"type": "string", "description": "The move-on question targeting a new JD criterion."},
-                                    "reasoning": {"type": "string", "description": "Which JD criterion this assesses and why (brief)."}
+                                    "question": {"type": "string", "description": "Short oral-style question on a new topic (max 20 words, use fillers)."},
+                                    "reasoning": {"type": "string", "description": "Which JD criterion this targets (brief)."}
                                 },
                                 "required": ["question", "reasoning"]
                             },
                             "revert": {
                                 "type": "object",
-                                "description": "REVERT: Circle back to a topic discussed EARLIER in the interview with a deeper or clarifying question. If this is the first round, ask about a different JD requirement instead.",
+                                "description": "Casually circle back to an earlier topic. If first round, ask about a different JD requirement. Max 20 words.",
                                 "properties": {
-                                    "question": {"type": "string", "description": "The revert/revisit question."},
-                                    "reasoning": {"type": "string", "description": "What earlier topic this revisits and why (brief)."}
+                                    "question": {"type": "string", "description": "Short oral-style revisit question (max 20 words, use fillers)."},
+                                    "reasoning": {"type": "string", "description": "What earlier topic this revisits (brief)."}
                                 },
                                 "required": ["question", "reasoning"]
                             }
