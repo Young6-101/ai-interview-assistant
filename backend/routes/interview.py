@@ -425,7 +425,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "_ts": bc["timestamp"]
                                 })
                                 
-                            timeline.sort(key=lambda x: x["_ts"])
+                            _EVT_ORDER = {"hr_clicked_button": 0, "transcript": 1, "ai_questions": 2}
+                            timeline.sort(key=lambda x: (x["_ts"], _EVT_ORDER.get(x["event"], 1)))
                             for item in timeline:
                                 item.pop("_ts", None)
                                 
