@@ -49,7 +49,7 @@ const SuggestedQuestionItem: React.FC<{ question: SuggestedQuestion }> = ({ ques
                 }}>
                     {config.emoji} {config.label}
                 </span>
-                <span style={{ fontSize: '11px', color: '#94a3b8' }}>{new Date(question.timestamp).toLocaleTimeString()}</span>
+                <span style={{ fontSize: '11px', color: '#94a3b8' }}>{new Date(question.timestamp).toLocaleTimeString('en-SG', { timeZone: 'Asia/Singapore' })}</span>
             </div>
 
             <p style={{ margin: '4px 0', fontSize: '15px', fontWeight: 500, color: '#1e293b', lineHeight: '1.4' }}>

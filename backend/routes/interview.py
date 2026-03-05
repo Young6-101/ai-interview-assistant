@@ -7,7 +7,10 @@ import time
 import logging
 import base64
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Hardcode Singapore Time (UTC+8)
+SGT = timezone(timedelta(hours=8))
 from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -37,7 +40,7 @@ async def create_interview(request: CreateInterviewRequest):
         interview_sessions[interview_id] = {
             "id": interview_id,
             "candidate_name": request.candidate_name,
-            "start_time": datetime.now().isoformat(),
+            "start_time": datetime.now(SGT).isoformat(),
             "status": "created",
             "transcripts": [],
             "suggested_questions": []
@@ -146,7 +149,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "id": session_id,
                         "username": final_username,
                         "mode": input_mode,
-                        "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "start_time": datetime.now(SGT).strftime("%Y-%m-%d %H:%M:%S"),
                         "transcripts": [],
                         "suggested_questions": []
                     }
@@ -383,11 +386,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         if session_id in interview_sessions:
                             session_data = interview_sessions[session_id]
                             session_data["status"] = "completed"
-                            session_data["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            session_data["end_time"] = datetime.now(SGT).strftime("%Y-%m-%d %H:%M:%S")
                             
                             timeline = []
                             for t in session_data.get("transcripts", []):
-                                dt = datetime.fromtimestamp(t["timestamp"] / 1000.0)
+                                dt = datetime.fromtimestamp(t["timestamp"] / 1000.0, tz=SGT)
                                 timeline.append({
                                     "event": "transcript",
                                     "speaker": t["speaker"],
@@ -405,7 +408,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 
                             for bucket, qs in qs_by_ts.items():
                                 avg_ts = qs[0]["timestamp"]
-                                dt = datetime.fromtimestamp(avg_ts / 1000.0)
+                                dt = datetime.fromtimestamp(avg_ts / 1000.0, tz=SGT)
                                 formatted_qs = [{"type": q["type"], "question": q["text"], "reasoning": q["reasoning"]} for q in qs]
                                 timeline.append({
                                     "event": "ai_questions",
@@ -415,7 +418,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 })
                                 
                             for bc in session_data.get("button_clicks", []):
-                                dt = datetime.fromtimestamp(bc["timestamp"] / 1000.0)
+                                dt = datetime.fromtimestamp(bc["timestamp"] / 1000.0, tz=SGT)
                                 timeline.append({
                                     "event": "hr_clicked_button",
                                     "time": dt.strftime("%Y-%m-%d %H:%M:%S"),
