@@ -127,28 +127,25 @@ class OpenAIRealtimeService:
                                 "type": "object",
                                 "description": "A short casual follow-up on what the candidate just said. Max 20 words, spoken style.",
                                 "properties": {
-                                    "question": {"type": "string", "description": "Short oral-style follow-up question (max 20 words, use fillers like 'like', 'so')."},
-                                    "reasoning": {"type": "string", "description": "Why this follow-up matters (brief)."}
+                                    "question": {"type": "string", "description": "Short oral-style follow-up question (max 20 words, use fillers like 'like', 'so')."}
                                 },
-                                "required": ["question", "reasoning"]
+                                "required": ["question"]
                             },
                             "move_on": {
                                 "type": "object",
                                 "description": "Casually pivot to a new JD criterion not yet discussed. Max 20 words, spoken style.",
                                 "properties": {
-                                    "question": {"type": "string", "description": "Short oral-style question on a new topic (max 20 words, use fillers)."},
-                                    "reasoning": {"type": "string", "description": "Which JD criterion this targets (brief)."}
+                                    "question": {"type": "string", "description": "Short oral-style question on a new topic (max 20 words, use fillers)."}
                                 },
-                                "required": ["question", "reasoning"]
+                                "required": ["question"]
                             },
                             "revert": {
                                 "type": "object",
                                 "description": "Casually circle back to an earlier topic. If first round, ask about a different JD requirement. Max 20 words.",
                                 "properties": {
-                                    "question": {"type": "string", "description": "Short oral-style revisit question (max 20 words, use fillers)."},
-                                    "reasoning": {"type": "string", "description": "What earlier topic this revisits (brief)."}
+                                    "question": {"type": "string", "description": "Short oral-style revisit question (max 20 words, use fillers)."}
                                 },
-                                "required": ["question", "reasoning"]
+                                "required": ["question"]
                             }
                         },
                         "required": ["follow_up", "move_on", "revert"]

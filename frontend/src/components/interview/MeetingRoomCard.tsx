@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 
 interface MeetingRoomCardProps {
     isConnected: boolean;
@@ -45,10 +45,31 @@ export const MeetingRoomCard: React.FC<MeetingRoomCardProps> = ({
 
     const confirmEnd = () => {
         setShowEndModal(false);
+        sessionStorage.removeItem('aiHelperCount');
         onEndInterview();
     };
 
     const isRunning = interviewState === 'RUNNING';
+
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+        if (isRunning) {
+            interval = setInterval(() => {
+                setElapsedSeconds(prev => prev + 1);
+            }, 1000);
+        } else {
+            setElapsedSeconds(0);
+        }
+        return () => clearInterval(interval);
+    }, [isRunning]);
+
+    const formatTime = (totalSeconds: number) => {
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    };
 
     return (
         <div className="card" style={{
@@ -65,7 +86,18 @@ export const MeetingRoomCard: React.FC<MeetingRoomCardProps> = ({
                 <h3 style={{ margin: 0, fontSize: '20px', fontWeight: 600, color: '#334155', textTransform: 'uppercase' }}>
                     {interviewMode ? interviewMode.replace(/_/g, ' ') : 'INTERVIEW MODE'}
                 </h3>
-                <div style={{ display: 'flex', gap: '8px' }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {isRunning && (
+                        <span style={{
+                            fontSize: '16px',
+                            fontWeight: 600,
+                            color: '#475569',
+                            fontVariantNumeric: 'tabular-nums',
+                            paddingRight: '8px'
+                        }}>
+                            {formatTime(elapsedSeconds)}
+                        </span>
+                    )}
                     <button
                         onClick={onStartMic}
                         disabled={isStreaming}

@@ -105,18 +105,24 @@ async def websocket_endpoint(websocket: WebSocket):
                         "questions": pending_questions
                     })
                     logger.info(f"💡 Unveiled {len(pending_questions)} buffered questions")
-                    # Save unveiled questions to session for JSON export
+                    
+                    # Store only the unveiled questions so they appear in the JSON
                     async with state_lock:
                         if session_id in interview_sessions:
-                            interview_sessions[session_id]["suggested_questions"].extend(pending_questions)
+                            # Use current timestamp for JSON record to signify when HR actually saw them
+                            for q in pending_questions:
+                                q_copy = q.copy()
+                                q_copy["timestamp"] = int(time.time() * 1000)
+                                interview_sessions[session_id]["suggested_questions"].append(q_copy)
+                    
                     pending_questions = []
                 elif candidate_service:
-                    # Buffer empty — force generate based on what AI has heard so far
-                    # Flag so the next analysis result goes directly to frontend
+                    # Buffer empty — wait for AI to finish processing the ongoing speech
+                    # Flag so the next analysis result goes directly to frontend AND saves to json
                     send_next_directly = True
                     logger.info("💡 Buffer empty, forcing question generation on demand")
                     await candidate_service.send_text_instruction(
-                        "The HR wants questions NOW. Based on everything you've heard so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
+                        "The HR just clicked the button but the candidate is still speaking or just finished. Based on everything you've heard so far right up to this exact moment, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
                     )
                 continue
                 
@@ -169,7 +175,29 @@ async def websocket_endpoint(websocket: WebSocket):
                     logger.info("🚀 Candidate OpenAI Realtime Service Connected")
                     
                     # Buffer for AI-generated questions (unveiled on button click)
-                    pending_questions = []
+                    pending_questions = [
+                        {
+                            "id": f"q_init_1",
+                            "text": "Could you walk me through a recent project you are particularly proud of?",
+                            "type": "follow_up",
+                            "skill": "🔽 FOLLOW-UP",
+                            "timestamp": int(time.time() * 1000)
+                        },
+                        {
+                            "id": f"q_init_2",
+                            "text": "What do you consider your greatest professional strength in this role?",
+                            "type": "move_on",
+                            "skill": "➡️ MOVE-ON",
+                            "timestamp": int(time.time() * 1000)
+                        },
+                        {
+                            "id": f"q_init_3",
+                            "text": "Can you share an example of a difficult challenge you successfully overcame?",
+                            "type": "revert",
+                            "skill": "🔙 REVERT",
+                            "timestamp": int(time.time() * 1000)
+                        }
+                    ]
                     # Flag: if True, next generated questions go directly to frontend
                     send_next_directly = False
                     
@@ -298,7 +326,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                         "text": q_data.get("question", ""),
                                         "type": q_type,
                                         "skill": TYPE_LABELS.get(q_type, q_type.upper()),
-                                        "reasoning": q_data.get("reasoning", ""),
                                         "timestamp": int(time.time() * 1000)
                                     })
                             
@@ -315,12 +342,17 @@ async def websocket_endpoint(websocket: WebSocket):
                                     })
                                     send_next_directly = False
                                     logger.info(f"💡 Sent {len(frontend_questions)} questions directly (on-demand)")
-                                    # Save to session for JSON export
+                                    
+                                    # Store only the newly unveiled questions so they appear in JSON
                                     async with state_lock:
                                         if session_id in interview_sessions:
-                                            interview_sessions[session_id]["suggested_questions"].extend(frontend_questions)
+                                            # Update timestamps to when they were seen
+                                            for q in frontend_questions:
+                                                q_copy = q.copy()
+                                                q_copy["timestamp"] = int(time.time() * 1000)
+                                                interview_sessions[session_id]["suggested_questions"].append(q_copy)
                                 else:
-                                    # Background: buffer for later unveil (not saved until unveiled)
+                                    # Background: buffer for later unveil (NOT saved to JSON yet)
                                     pending_questions = frontend_questions
                     
                     # Background listener for HR service
@@ -409,7 +441,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             for bucket, qs in qs_by_ts.items():
                                 avg_ts = qs[0]["timestamp"]
                                 dt = datetime.fromtimestamp(avg_ts / 1000.0, tz=SGT)
-                                formatted_qs = [{"type": q["type"], "question": q["text"], "reasoning": q["reasoning"]} for q in qs]
+                                formatted_qs = [{"type": q["type"], "question": q["text"]} for q in qs]
                                 timeline.append({
                                     "event": "ai_questions",
                                     "questions": formatted_qs,
@@ -437,6 +469,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "start_time": session_data.get("start_time"),
                                 "end_time": session_data["end_time"],
                                 "status": session_data["status"],
+                                "total_ai_helping_times": len(session_data.get("button_clicks", [])),
                                 "timeline": timeline
                             }
                             

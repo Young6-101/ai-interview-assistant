@@ -201,6 +201,46 @@ export const Login = () => {
             Start Interview
           </button>
         </form>
+
+        {import.meta.env.DEV && (
+          <div style={{ marginTop: '24px', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+            <p style={{ fontSize: '12px', color: '#64748b', textAlign: 'center', marginBottom: '8px' }}>
+              🔧 Developer Quick Start
+            </p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {modeOptions.map(option => (
+                <button
+                  key={`dev-${option.value}`}
+                  onClick={() => {
+                    const defaultName = 'Test HR'
+                    const timestamp = new Date().toISOString()
+                    const token = generateToken(defaultName)
+                    context.setCandidateName(defaultName)
+                    context.setToken(token)
+                    context.setInterviewMode(option.value)
+                    context.setCandidateId(`local_${timestamp}`)
+                    setApiToken(token)
+                    localStorage.clear()
+                    navigate('/interview')
+                  }}
+                  style={{
+                    flex: 1,
+                    padding: '8px',
+                    borderRadius: '8px',
+                    backgroundColor: '#f1f5f9',
+                    color: '#475569',
+                    border: '1px solid #cbd5e1',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    fontWeight: 600
+                  }}
+                >
+                  {option.value}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

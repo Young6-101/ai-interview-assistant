@@ -24,6 +24,7 @@ export const Interview: React.FC = () => {
   const context = useInterview()
   const navigate = useNavigate()
   const [error, setError] = useState<string>('')
+  const [showConsentModal, setShowConsentModal] = useState(true)
 
   // Use ref to track interview state for audio callback (avoids stale closure)
   const interviewStateRef = React.useRef(context.interviewState)
@@ -239,6 +240,55 @@ export const Interview: React.FC = () => {
 
       {/* 4. BOTTOM RIGHT: JD */}
       <JobDescriptionCard />
+
+      {/* Entrance Consent Modal */}
+      {showConsentModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, width: '100vw', height: '100vh',
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          backdropFilter: 'blur(4px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 10000
+        }}>
+          <div style={{
+            background: '#fff',
+            padding: '32px 40px',
+            borderRadius: '16px',
+            maxWidth: '480px',
+            textAlign: 'center',
+            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+          }}>
+            <h2 style={{ fontSize: '20px', color: '#0f172a', marginBottom: '16px', fontWeight: 600 }}>
+              Important Notice
+            </h2>
+            <p style={{ fontSize: '16px', color: '#475569', lineHeight: 1.5, marginBottom: '28px' }}>
+              Please be aware that candidate knows your are using AI
+            </p>
+            <button
+              onClick={() => setShowConsentModal(false)}
+              style={{
+                background: '#2563eb',
+                color: '#fff',
+                border: 'none',
+                padding: '12px 24px',
+                borderRadius: '8px',
+                fontSize: '15px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'background 0.2s',
+                width: '100%'
+              }}
+              onMouseOver={(e) => e.currentTarget.style.background = '#1d4ed8'}
+              onMouseOut={(e) => e.currentTarget.style.background = '#2563eb'}
+            >
+              Confirm and Ready to go
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
