@@ -203,14 +203,15 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     # Track speaking state for interim display
                     # Store the current active placeholder ID per speaker
-                    speaking_state = {"hr": None, "candidate": None}
+                    # speaking_state = {"hr": None, "candidate": None}
                     
                     # Helper function to handle events from either service
                     async def handle_event(event, service_name):
-                        nonlocal speaking_state
+                        # nonlocal speaking_state
                         
                         # Handle speech_started - show "Speaking..." placeholder
                         if event["type"] == "speech_started":
+                            """
                             speaker = event.get("speaker", "candidate")
                             timestamp = int(time.time() * 1000)
                             interim_id = f"speaking_{speaker}_{timestamp}"
@@ -238,10 +239,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "id": interim_id
                                 }
                             })
+                            """
                             return
                         
                         # Handle speech_stopped - clean up stale "Speaking..." if no transcript follows
                         if event["type"] == "speech_stopped":
+                            """
                             speaker = event.get("speaker", "candidate")
                             stale_id = speaking_state.get(speaker)
                             if stale_id:
@@ -256,6 +259,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "payload": {"id": sid}
                                         })
                                 asyncio.create_task(cleanup_stale(stale_id, speaker))
+                            """
                             return
                         
                         if event["type"] == "transcript":
@@ -263,6 +267,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             speaker = event.get("speaker", "candidate")
                             timestamp = int(time.time() * 1000)
                             
+                            """
                             # Check if we need to replace an interim "speaking" entry
                             interim_id = speaking_state.get(speaker)
                             if interim_id:
@@ -291,6 +296,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                         "is_final": True
                                     }
                                 })
+                            """
                             
                             # Save to Session State
                             async with state_lock:

@@ -90,6 +90,7 @@ export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, int
     const [isFakeLoading, setIsFakeLoading] = useState(false);
     const [aiHelperCount, setAiHelperCount] = useState(0);
     const [shaking, setShaking] = useState(false);
+    const [showMode2Tip, setShowMode2Tip] = useState(false);
 
     useEffect(() => {
         sessionStorage.setItem('aiHelperCount', '0');
@@ -124,6 +125,11 @@ export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, int
         sessionStorage.setItem('aiHelperCount', newCount.toString());
 
         if (newCount >= 5) triggerShake();
+
+        if (interviewMode === 'mode2') {
+            setShowMode2Tip(true);
+            setTimeout(() => setShowMode2Tip(false), 3000);
+        }
 
         setIsFakeLoading(true);
         setTimeout(() => {
@@ -185,7 +191,7 @@ export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, int
                   }
                 `}</style>
 
-                <div className={(shaking && interviewMode === 'mode2') ? "shake" : ""} style={{ width: "100%" }}>
+                <div className={(shaking && interviewMode === 'mode2') ? "shake" : ""} style={{ width: "100%", position: "relative" }}>
                     {/* Dependency Meter */}
                     {interviewMode !== 'mode1' && (
                         <div style={{
@@ -297,12 +303,49 @@ export const AiQuestionsCard: React.FC<AiQuestionsCardProps> = ({ questions, int
                     >
                         {isFakeLoading ? "GENERATING..." : (interviewMode === 'mode2' ? `▶  ${levelData.btnText.toUpperCase()}` : "▶  SEE AI SUGGESTIONS")}
                     </button>
+
+                    {/* Interaction Tip */}
+                    {((interviewMode === 'mode2' && showMode2Tip) || interviewMode === 'mode3') && (
+                        <div style={{
+                            position: 'absolute',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            marginTop: '8px', // Right below the button, a bit more space
+                            background: '#ef4444', // Red for alert
+                            color: 'white',
+                            padding: '10px 24px', // Bigger padding
+                            borderRadius: '30px', // More rounded
+                            fontSize: '16px', // Larger text
+                            fontWeight: 700, // Bolder
+                            zIndex: 10,
+                            boxShadow: '0 6px 12px rgba(239, 68, 68, 0.3)', // Redish glow
+                            whiteSpace: 'nowrap',
+                            animation: 'bounceIn 0.3s ease'
+                        }}>
+                            Candidate knows you are using AI
+                        </div>
+                    )}
                 </div>
             </div>
 
-            <div style={{ flex: 1, overflowY: 'auto', padding: '12px', background: '#f8fafc' }}>
+            <style>{`
+                @keyframes bounceIn {
+                    0% { transform: translate(-50%, -10px); opacity: 0; }
+                    100% { transform: translate(-50%, 0); opacity: 1; }
+                }
+            `}</style>
+
+            <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '12px',
+                background: '#f8fafc',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'center'
+            }}>
                 {visibleQuestions.length === 0 ? (
-                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '15px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '15px' }}>
                         Waiting for conversation...
                     </div>
                 ) : (
