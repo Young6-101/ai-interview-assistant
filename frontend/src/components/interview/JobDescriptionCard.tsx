@@ -4,7 +4,6 @@ import React from 'react';
 const JD_CONTENT = `Research Assistant – HCI Lab
 
 Requirements:
-- Current/recent student or graduate in HCI, Computer Science, Design, Psychology or related field
 - Practical experience or strong training in user research / UX methods
 - Comfortable with user study facilitation (interviews/tests/surveys)
 - Prototyping skills (Figma / Adobe XD / Sketch or similar)
@@ -12,7 +11,6 @@ Requirements:
   • Qualitative: thematic analysis, coding
   • AND/OR quantitative: basic stats in Python / R / SPSS
 - Solid academic/technical writing ability
-- Available ≥20 hours/week
 
 Bonus:
 - Prior research project or lab experience
