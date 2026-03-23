@@ -10,12 +10,7 @@ Requirements:
 - Data analysis capability:
   • Qualitative: thematic analysis, coding
   • AND/OR quantitative: basic stats in Python / R / SPSS
-- Solid academic/technical writing ability
-
-Bonus:
-- Prior research project or lab experience
-- Familiarity with NVivo, PyTorch, Unity, participatory design
-- Interest in mental health & technology, inclusive design, or AI ethics`;
+- Solid academic/technical writing ability`;
 
 export const JobDescriptionCard: React.FC = () => {
     return (
