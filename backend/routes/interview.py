@@ -122,7 +122,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     send_next_directly = True
                     logger.info("💡 Buffer empty, forcing question generation on demand")
                     await candidate_service.send_text_instruction(
-                        "The HR just clicked the button but the candidate is still speaking or just finished. Based on everything you've heard so far right up to this exact moment, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
+                        "The HR just clicked the button but the candidate is still speaking or just finished. Based on everything you've heard so far, generate 3 questions using submit_interview_suggestions. Each question MUST target a specific JD requirement."
                     )
                 continue
                 
@@ -130,7 +130,7 @@ async def websocket_endpoint(websocket: WebSocket):
             if message_type == "generate_questions":
                 if candidate_service:
                     await candidate_service.send_text_instruction(
-                        "Based on the conversation so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
+                        "Based on the conversation so far, generate 3 questions using submit_interview_suggestions. Each question MUST target a specific JD requirement."
                     )
                 continue
 
@@ -310,7 +310,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             # Auto-trigger AI question generation if Candidate just finished speaking
                             if speaker == "candidate" and candidate_service:
                                 await candidate_service.send_text_instruction(
-                                    "The candidate just finished speaking. Based on the conversation so far, please generate 3 follow-up questions immediately using the submit_interview_suggestions tool."
+                                    "The candidate just finished speaking. Based on the conversation so far, generate 3 questions using submit_interview_suggestions. Each question MUST target a specific JD requirement from the job description."
                                 )
 
                         elif event["type"] == "analysis":
@@ -484,7 +484,13 @@ async def websocket_endpoint(websocket: WebSocket):
                                 if not os.path.exists(directory):
                                     os.makedirs(directory)
                                 
-                                filename = f"{directory}/{session_id}.json"
+                                # Format: username_date_starttime_mode.json
+                                start_parts = session_data.get("start_time", "").split(" ")
+                                date_str = start_parts[0]  # "2026-03-23"
+                                time_str = start_parts[1].replace(":", "-") if len(start_parts) > 1 else "000000"  # "09-12-41"
+                                uname = session_data.get("username", "unknown")
+                                mode_str = session_data.get("mode", "realtime")
+                                filename = f"{directory}/{uname}_{date_str}_{time_str}_{mode_str}.json"
                                 with open(filename, 'w', encoding='utf-8') as f:
                                     json.dump(save_data, f, indent=2, ensure_ascii=False)
                                 logger.info(f"💾 Saved interview data to {filename}")

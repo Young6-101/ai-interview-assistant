@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 # Hardcoded JD for V2-Lite (shared by all instances)
 JD_TEXT = """**Job Title: Research Assistant – HCI Lab**
 **Requirements:**
-- Current/recent student or graduate in HCI, Computer Science, Design, Psychology or related field
 - Practical experience or strong training in user research / UX methods
 - Comfortable with user study facilitation (interviews/tests/surveys)
 - Prototyping skills (Figma / Adobe XD / Sketch or similar)
@@ -19,12 +18,7 @@ JD_TEXT = """**Job Title: Research Assistant – HCI Lab**
   • Qualitative: thematic analysis, coding
   • AND/OR quantitative: basic stats in Python / R / SPSS
 - Solid academic/technical writing ability
-- Available ≥20 hours/week
-
-**Bonus:**
-- Prior research project or lab experience
-- Familiarity with NVivo, PyTorch, Unity, participatory design
-- Interest in mental health & technology, inclusive design, or AI ethics"""
+"""
 
 
 class OpenAIRealtimeService:
@@ -101,16 +95,22 @@ class OpenAIRealtimeService:
             - "What specific prototyping tools have you utilized in your previous work?"
             ============================================
 
+            IMPORTANT: Every question you generate MUST be grounded in the JD above.
+            If the candidate talks about something unrelated to the JD, steer them back to a relevant JD criterion.
+
             The 3 questions MUST follow this structure:
 
-            1. 'follow_up' (Dive Deeper): A casual follow-up on what the candidate JUST said.
-               Probe for details, poke at gaps, or ask for a concrete example — but keep it conversational and brief.
+            1. 'follow_up' (Dive Deeper): A casual follow-up on what the candidate JUST said,
+               BUT always connect it back to a specific JD requirement. Probe for details that help
+               evaluate whether the candidate meets a JD criterion. If what they said has nothing to
+               do with the JD, pivot to asking how their experience relates to a JD skill.
 
             2. 'move_on' (New Topic): Pivot to a DIFFERENT JD criterion NOT yet discussed.
-               Frame it casually, like you're naturally shifting the conversation.
+               Pick a specific skill or requirement from the JD and ask about it casually.
 
-            3. 'revert' (Go Back): Circle back to something discussed EARLIER.
-               If first round with no prior topics, ask about a different JD requirement instead. Don't pretend there was a previous topic.
+            3. 'revert' (Go Back): Circle back to a JD-relevant topic discussed EARLIER that
+               needs more depth. If first round with no prior topics, ask about a different JD
+               requirement instead. Don't pretend there was a previous topic.
 
             Call 'submit_interview_suggestions' to submit these 3 questions.
             Do NOT generate spoken audio responses, ONLY use the tool.
